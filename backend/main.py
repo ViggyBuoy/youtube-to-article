@@ -35,12 +35,15 @@ from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+import random
+
 from database import (
     init_db, close_db, insert_article, get_all_articles, get_article_by_slug,
     get_all_channels, get_articles_by_channel_slug, generate_channel_slug,
     update_article, delete_article,
     insert_source, get_all_sources, toggle_source, delete_source,
     is_url_seen, insert_seen_url, get_recent_article_titles,
+    get_all_tags, get_articles_by_tag,
 )
 
 
@@ -111,6 +114,18 @@ GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 # Configure Gemini client
 gemini_client = genai.Client(api_key=GEMINI_KEY)
 
+# Random American journalist names for RSS articles
+_AMERICAN_AUTHOR_NAMES = [
+    "James Mitchell", "Sarah Johnson", "Michael Chen", "Emily Rodriguez",
+    "David Thompson", "Jessica Williams", "Ryan Parker", "Amanda Foster",
+    "Christopher Lee", "Lauren Martinez", "Andrew Sullivan", "Rachel Kim",
+    "Daniel Cooper", "Megan Brooks", "Tyler Washington", "Samantha Reed",
+    "Nathan Hayes", "Olivia Bennett", "Brandon Cruz", "Ashley Morgan",
+    "Kevin Patel", "Stephanie Rivera", "Justin Howard", "Nicole Adams",
+    "Eric Nguyen", "Katherine Scott", "Marcus Wright", "Hannah Clarke",
+    "Derek Santos", "Victoria Stone",
+]
+
 
 YOUTUBE_URL_PATTERN = re.compile(
     r"^(https?://)?(www\.)?(youtube\.com/watch\?v=|youtu\.be/)[\w-]{11}"
@@ -161,6 +176,7 @@ class PublishRequest(BaseModel):
     language: Literal["english", "hindi", "hinglish"]
     transcript: str
     article: str
+    tags: str = ""
 
 
 class LoginRequest(BaseModel):
@@ -517,10 +533,23 @@ async def transcribe_audio(filepath: str) -> str:
 
 # ── Step 3: Generate SEO article with Gemini ─────────────────────────────────
 
+def _clean_tags(raw_tags: str) -> str:
+    """Normalize AI-generated tags: lowercase, strip, deduplicate."""
+    seen = set()
+    cleaned = []
+    for tag in raw_tags.split(","):
+        tag = tag.strip().lower().replace(" ", "-")
+        tag = re.sub(r"[^a-z0-9-]", "", tag)
+        if tag and tag not in seen:
+            seen.add(tag)
+            cleaned.append(tag)
+    return ",".join(cleaned[:8])
+
+
 def generate_article(transcript: str, title: str, channel: str, language: str) -> dict:
     """Use Gemini to turn a transcript into a CoinDesk-style news article.
 
-    Returns dict with keys: title, meta_description, body
+    Returns dict with keys: title, meta_description, body, tags
     """
     lang_instruction = LANGUAGE_INSTRUCTIONS[language]
 
@@ -540,29 +569,34 @@ PHASE 2: GEO & SEO ARCHITECTURE
 To ensure this article is picked up by AI and Search Engines, you must:
 1. Information Gain: Focus on the unique insights the influencer provides that aren't found in generic news.
 2. The "Featured Snippet" Hook: Start with a 2-3 sentence "Bottom Line Up Front" (BLUF) that directly answers the main question of the topic.
-3. Authority Fact-Citing: Identify 4-6 specific factual claims or data points in the transcript. **Bold** these key facts and mention the source name inline (e.g., "according to Glassnode data", "per CoinMarketCap"). Do NOT generate hyperlinks or URLs — only cite source names in plain text.
+3. Authority Fact-Citing with Hyperlinks: Identify 4-6 specific factual claims or data points in the transcript. **Bold** these key facts and include markdown hyperlinks to reputable crypto data sources where possible. Use real, well-known URL patterns like:
+   - Token data: https://coinmarketcap.com/currencies/bitcoin/ or https://www.coingecko.com/en/coins/ethereum
+   - DeFi metrics: https://defillama.com/protocol/aave
+   - On-chain data: reference Glassnode, Dune Analytics, etc.
+   Example: "**Bitcoin dominance hit 58%** according to [CoinMarketCap](https://coinmarketcap.com/charts/#dominance-percentage)"
 4. Structured Data: Convert any comparisons, lists of steps, or numerical data from the transcript into a Markdown Table or Bullet Points for AI readability.
 
 PHASE 3: THE ARTICLE STRUCTURE (800-1200 Words)
-* The "H1" Headline: A bold, citable headline containing the primary SEO keyword and the influencer's main stance.
+* The "H1" Headline: A bold, citable headline containing the primary SEO keyword and the influencer's main stance. The title MUST end with " | {channel}" to credit the creator (e.g., "Bitcoin Bull Run Analysis | Raoul Pal").
 * The First-Person Intro: Establish the influencer's authority immediately. No "In this video" or "He says."
 * The Thesis (H2): Use a question-based subheading (e.g., "Why the Layer 2 Narrative is Shifting").
-* The Evidence (H2/H3): Expand on the creator's logic. Integrate the bolded factual claims with source citations here to ground their opinion in verified data.
+* The Evidence (H2/H3): Expand on the creator's logic. Integrate the bolded factual claims with hyperlinked source citations.
 * The "So What?" (Conclusion): A definitive closing statement that summarizes the influencer's unique perspective and future outlook.
+* VIDEO CTA: At the very end of the body, include this exact line: "\\n\\n---\\n\\n**You can also check out my full video breakdown on this topic below.**\\n"
 
 STRICT CONSTRAINTS
 * Perspective: STRICTLY first-person. The influencer is the author.
 * No Metadata Talk: Never mention "the transcript," "the video," or "the creator."
 * Tone: Expert, polished, and assertive. Replace filler words with professional crypto terminology (e.g., "liquidity crunch" instead of "no money left").
-* Formatting: Use Markdown (H2, H3, Bold, Lists, Tables).
-* Title: The title field MUST be plain text only — NO markdown, NO asterisks (**), NO quotes. Just a clean headline string.
-* No URLs: Do NOT include any hyperlinks or URLs in the article body. Cite sources by name only (e.g., "according to Glassnode").
+* Formatting: Use Markdown (H2, H3, Bold, Lists, Tables, Hyperlinks).
+* Title: The title field MUST be plain text only — NO markdown, NO asterisks (**), NO quotes. Must end with " | {channel}".
 
-You MUST return your response as valid JSON with exactly these three fields:
+You MUST return your response as valid JSON with exactly these four fields:
 {{
-  "title": "The H1 headline — bold, citable, contains primary SEO keyword and influencer's main stance (50-80 characters)",
+  "title": "The H1 headline ending with ' | {channel}' (50-90 characters, plain text only)",
   "meta_description": "A 1-2 sentence BLUF summary for SEO meta tags (150-160 characters)",
-  "body": "The full article body in Markdown format (800-1200 words). Written in FIRST PERSON as the influencer. Do NOT include the title or meta description in the body."
+  "body": "The full article body in Markdown format (800-1200 words). Written in FIRST PERSON as the influencer. Must end with the video CTA line. Do NOT include the title or meta description in the body.",
+  "tags": "5-8 lowercase comma-separated crypto/topic tags relevant to this article (e.g. bitcoin,ethereum,defi,market-analysis,layer-2)"
 }}
 
 Return ONLY the JSON object, no markdown code fences, no extra text.
@@ -599,6 +633,7 @@ TRANSCRIPT TO PROCESS:
             "title": clean_title,
             "meta_description": result.get("meta_description", "").strip().strip('"'),
             "body": result.get("body", raw),
+            "tags": _clean_tags(result.get("tags", "")),
         }
     except (json.JSONDecodeError, AttributeError) as e:
         # Fallback: use raw text as body, keep YouTube title
@@ -607,6 +642,7 @@ TRANSCRIPT TO PROCESS:
             "title": title,
             "meta_description": "",
             "body": raw,
+            "tags": "",
         }
 
 
@@ -635,26 +671,28 @@ Article (first 500 chars): {article[:500]}"""
 
 # ── Step 4: Generate AI thumbnail ─────────────────────────────────────────────
 
-def generate_thumbnail(youtube_thumbnail_url: str) -> str:
-    """Download the YouTube thumbnail, transform it via Gemini into a
+def generate_thumbnail(image_url: str, article_title: str = "") -> str:
+    """Download an image, transform it via Gemini into a
     comic-book style crypto news thumbnail, and return a base64 data URL.
-    Falls back to the original YouTube URL on error.
+    Falls back to the original URL on error.
     """
     try:
-        # Download the original YouTube thumbnail
-        print(f"[thumbnail] Downloading YouTube thumbnail: {youtube_thumbnail_url}")
-        with httpx.Client(timeout=30) as client:
-            img_resp = client.get(youtube_thumbnail_url)
+        # Download the original thumbnail
+        print(f"[thumbnail] Downloading thumbnail: {image_url[:80]}")
+        with httpx.Client(timeout=30, headers={"User-Agent": "Mozilla/5.0"}) as client:
+            img_resp = client.get(image_url)
             img_resp.raise_for_status()
             original_bytes = img_resp.content
         print(f"[thumbnail] Downloaded: {len(original_bytes)} bytes")
 
+        title_line = f"\n\nArticle title: {article_title}" if article_title else ""
         prompt = (
             "Transform this image to a high-contrast, comic-book style illustration "
             "for a crypto news thumbnail. The style should be inspired by modern graphic "
-            "novels with bold, dark ink outlines and clean cel-shading.\n"
-            "Color Palette: Use a 'teal and orange' cinematic color grade with vibrant "
-            "highlights and deep, inked shadows."
+            "novels with bold, dark ink outlines and clean cel-shading. "
+            "The elements in the image should be heavily inspired by the title of the "
+            "article and image I have shared."
+            f"{title_line}"
         )
         print(f"[thumbnail] Model: gemini-3.1-flash-image-preview")
 
@@ -679,12 +717,12 @@ def generate_thumbnail(youtube_thumbnail_url: str) -> str:
                 return data_url
 
         # No image part found – fall back
-        print("[thumbnail] Gemini returned no image parts, using YouTube thumbnail")
-        return youtube_thumbnail_url
+        print("[thumbnail] Gemini returned no image parts, using original thumbnail")
+        return image_url
 
     except Exception as e:
         print(f"[thumbnail] Failed to generate AI thumbnail: {e}")
-        return youtube_thumbnail_url
+        return image_url
 
 
 # ── Scraper: RSS parsing, article extraction, dedup, rewrite ─────────────────
@@ -809,9 +847,16 @@ def _extract_article_text(url: str) -> tuple[str, str]:
         return "", ""
 
 
-def generate_rewritten_article(original_text: str, original_title: str, source_name: str) -> dict:
-    """Use Gemini to rewrite a news article in original voice."""
-    prompt = f"""You are a crypto news editor. Transform the following article into an original, well-structured crypto news piece.
+def generate_rewritten_article(original_text: str, original_title: str, source_name: str, original_url: str = "") -> dict:
+    """Use Gemini to rewrite a news article in original voice.
+
+    Returns dict with keys: title, meta_description, body, tags
+    """
+    source_link_instruction = ""
+    if original_url:
+        source_link_instruction = f'Include a hyperlink to the original source: [{source_name}]({original_url})'
+
+    prompt = f"""You are a senior crypto news editor at a major publication. Transform the following article into an original, heavily SEO-optimized crypto news piece.
 
 Source: {source_name}
 Original Title: {original_title}
@@ -820,18 +865,36 @@ INSTRUCTIONS:
 1. Write in THIRD PERSON, objective journalist voice
 2. Do NOT copy phrases verbatim from the source — rewrite everything in your own words
 3. Maintain all factual accuracy — preserve key data points, numbers, quotes
-4. Structure: compelling headline, 2-3 sentence intro summary, then body with H2 subheadings
-5. Target 600-1000 words
-6. Use Markdown formatting (H2, bold, lists, tables where appropriate)
-7. **Bold** key data points and statistics
-8. Cite sources by name only — no URLs or hyperlinks
-9. Title MUST be plain text only — NO markdown, asterisks, or quotes
 
-You MUST return valid JSON with exactly these three fields:
+SEO OPTIMIZATION:
+1. Featured Snippet Hook: Start with a 2-3 sentence "Bottom Line Up Front" (BLUF) that directly answers the main question
+2. Hyperlinked Facts: For key factual claims, include markdown hyperlinks to reputable crypto data sources. Use real, well-known URL patterns:
+   - Token data: https://coinmarketcap.com/currencies/bitcoin/ or https://www.coingecko.com/en/coins/ethereum
+   - DeFi metrics: https://defillama.com/protocol/aave
+   - On-chain: reference Glassnode, Dune Analytics, etc.
+   Example: "**Bitcoin surged past $70,000** according to [CoinMarketCap](https://coinmarketcap.com/currencies/bitcoin/)"
+3. {source_link_instruction}
+4. Structured Data: Convert comparisons, lists, or numerical data into Markdown Tables or Bullet Points
+5. **Bold** all key data points, statistics, and numbers
+
+ARTICLE STRUCTURE (600-1000 Words):
+* Compelling, SEO-keyword-rich headline (plain text, no markdown)
+* 2-3 sentence intro summary (the BLUF / Featured Snippet hook)
+* Body with H2 subheadings — each subheading should be question-based or keyword-rich
+* Data-rich evidence sections with hyperlinked citations
+* Definitive conclusion with forward-looking analysis
+
+STRICT CONSTRAINTS:
+* Title MUST be plain text only — NO markdown, asterisks, or quotes
+* Use Markdown formatting (H2, H3, Bold, Lists, Tables, Hyperlinks)
+* Do NOT copy phrases verbatim — fully rewrite in original language
+
+You MUST return valid JSON with exactly these four fields:
 {{
   "title": "A compelling, SEO-optimized headline (50-80 characters, plain text only)",
-  "meta_description": "A 1-2 sentence summary for SEO (150-160 characters)",
-  "body": "The full rewritten article in Markdown (600-1000 words)"
+  "meta_description": "A 1-2 sentence BLUF summary for SEO (150-160 characters)",
+  "body": "The full rewritten article in Markdown (600-1000 words)",
+  "tags": "5-8 lowercase comma-separated crypto/topic tags relevant to this article (e.g. bitcoin,ethereum,defi,regulation,market-analysis)"
 }}
 
 Return ONLY the JSON object, no markdown code fences, no extra text.
@@ -861,10 +924,11 @@ ARTICLE TO REWRITE:
             "title": clean_title,
             "meta_description": result.get("meta_description", "").strip().strip('"'),
             "body": result.get("body", raw),
+            "tags": _clean_tags(result.get("tags", "")),
         }
     except (json.JSONDecodeError, AttributeError) as e:
         print(f"[scraper] JSON parse failed ({e}), using raw text")
-        return {"title": original_title, "meta_description": "", "body": raw}
+        return {"title": original_title, "meta_description": "", "body": raw, "tags": ""}
 
 
 async def _run_scrape_cycle():
@@ -915,9 +979,11 @@ async def _run_scrape_cycle():
                     skipped += 1
                     continue
 
-                # Rewrite with Gemini
+                # Rewrite with Gemini (pass original URL for source linking)
                 _log_scraper(f"Rewriting: {title[:50]}")
-                article_data = await asyncio.to_thread(generate_rewritten_article, text, title, source["name"])
+                article_data = await asyncio.to_thread(
+                    generate_rewritten_article, text, title, source["name"], url
+                )
 
                 # Generate slug
                 slug = await asyncio.to_thread(generate_slug, article_data["title"], article_data["body"])
@@ -925,16 +991,25 @@ async def _run_scrape_cycle():
                 if existing:
                     slug = f"{slug}-{int(time.time())}"
 
-                # Use og:image directly as thumbnail (skip AI generation for speed)
-                thumbnail = og_image or ""
+                # Generate AI comic-book thumbnail from og:image
+                if og_image:
+                    _log_scraper(f"Generating thumbnail: {title[:40]}")
+                    thumbnail = await asyncio.to_thread(
+                        generate_thumbnail, og_image, article_data["title"]
+                    )
+                else:
+                    thumbnail = ""
+
+                # Random American journalist name as author
+                author_name = random.choice(_AMERICAN_AUTHOR_NAMES)
 
                 # Publish
-                channel_slug = generate_channel_slug(source["name"])
+                channel_slug = generate_channel_slug(author_name)
                 await insert_article(
                     slug=slug,
                     title=article_data["title"],
                     meta_description=article_data["meta_description"],
-                    channel=source["name"],
+                    channel=author_name,
                     channel_slug=channel_slug,
                     channel_avatar="",
                     thumbnail=thumbnail,
@@ -943,16 +1018,17 @@ async def _run_scrape_cycle():
                     language="english",
                     transcript=text,
                     article=article_data["body"],
+                    tags=article_data.get("tags", ""),
                 )
 
                 await insert_seen_url(url, source["id"], article_data["title"], "published")
                 recent_titles.append(article_data["title"])
                 published += 1
                 source_published += 1
-                _log_scraper(f"Published: '{article_data['title'][:60]}'")
+                _log_scraper(f"Published: '{article_data['title'][:60]}' by {author_name}")
 
                 # Rate limit: wait between articles to avoid Gemini API exhaustion
-                await asyncio.sleep(8)
+                await asyncio.sleep(15)
 
         except Exception as e:
             _log_scraper(f"Error processing source '{source['name']}': {e}", "error")
@@ -1039,9 +1115,11 @@ async def convert(req: ConvertRequest):
         print(f"[convert] Audio download failed: {e}")
         raise HTTPException(status_code=502, detail=f"Audio download failed: {e}")
 
-    # Start thumbnail generation in parallel
+    # Start thumbnail generation in parallel (with article title for context)
     executor = ThreadPoolExecutor(max_workers=1)
-    thumbnail_future = executor.submit(generate_thumbnail, metadata["thumbnail"])
+    thumbnail_future = executor.submit(
+        generate_thumbnail, metadata["thumbnail"], metadata["title"]
+    )
 
     try:
         transcript = await transcribe_audio(filepath)
@@ -1068,6 +1146,7 @@ async def convert(req: ConvertRequest):
         "title": article_data["title"],
         "meta_description": article_data["meta_description"],
         "article": article_data["body"],
+        "tags": article_data.get("tags", ""),
         "language": req.language,
     }
 
@@ -1095,6 +1174,7 @@ async def publish(req: PublishRequest):
         language=req.language,
         transcript=req.transcript,
         article=req.article,
+        tags=req.tags,
     )
     return {"slug": slug, "article": article_record}
 
@@ -1125,6 +1205,20 @@ async def get_author(channel_slug: str):
     if not result:
         raise HTTPException(status_code=404, detail="Author not found")
     return result
+
+
+# ── Tags Endpoints ──────────────────────────────────────────────────────────
+
+@app.get("/api/tags")
+async def list_tags():
+    tags = await get_all_tags()
+    return {"tags": tags}
+
+
+@app.get("/api/tags/{tag}")
+async def get_tag_articles(tag: str):
+    articles = await get_articles_by_tag(tag)
+    return {"tag": tag, "articles": articles}
 
 
 # ── Admin Endpoints ──────────────────────────────────────────────────────────

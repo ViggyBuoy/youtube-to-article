@@ -69,6 +69,7 @@ export default function HomePage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [tags, setTags] = useState<{ name: string; count: number }[]>([]);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/articles`, { cache: "no-store" })
@@ -76,6 +77,11 @@ export default function HomePage() {
       .then((d) => setArticles(d.articles || []))
       .catch(() => setArticles([]))
       .finally(() => setLoading(false));
+
+    fetch(`${API_BASE}/api/tags`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { tags: [] }))
+      .then((d) => setTags((d.tags || []).slice(0, 15)))
+      .catch(() => setTags([]));
   }, []);
 
   const filtered =
@@ -268,6 +274,24 @@ export default function HomePage() {
               </div>
             ))}
           </div>
+
+          {/* Popular Tags */}
+          {tags.length > 0 && (
+            <div className="cd-tags-section">
+              <h4 className="cd-stats-head">Popular Tags</h4>
+              <div className="cd-tags-cloud">
+                {tags.map((t) => (
+                  <Link
+                    key={t.name}
+                    href={`/tags/${t.name}`}
+                    className="cd-tag-pill"
+                  >
+                    {t.name} <span className="cd-tag-count">{t.count}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Latest highlight */}
           {articles[0] && (

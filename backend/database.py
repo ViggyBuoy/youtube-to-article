@@ -112,6 +112,12 @@ async def init_db():
         """)
         print(f"[db] Sources + seen_urls tables verified")
 
+        # ── Tags column migration ──
+        await conn.execute(
+            "ALTER TABLE articles ADD COLUMN IF NOT EXISTS tags TEXT NOT NULL DEFAULT ''"
+        )
+        print(f"[db] Tags column verified")
+
 
 async def close_db():
     """Close the connection pool."""
@@ -134,15 +140,16 @@ async def insert_article(
     language: str,
     transcript: str,
     article: str,
+    tags: str = "",
 ) -> dict:
     async with _pool.acquire() as conn:
         await conn.execute(
             """INSERT INTO articles
                (slug, title, meta_description, channel, channel_slug, channel_avatar,
-                thumbnail, duration, youtube_url, language, transcript, article)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
+                thumbnail, duration, youtube_url, language, transcript, article, tags)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)""",
             slug, title, meta_description, channel, channel_slug, channel_avatar,
-            thumbnail, duration, youtube_url, language, transcript, article,
+            thumbnail, duration, youtube_url, language, transcript, article, tags,
         )
     return await get_article_by_slug(slug)
 
@@ -304,3 +311,45 @@ async def get_recent_article_titles(hours: int = 24) -> list[str]:
             cutoff,
         )
         return [row["title"] for row in rows]
+
+
+# ── Tags ────────────────────────────────────────────────────────────────────
+
+async def get_all_tags() -> list[dict]:
+    """Get all tags with article counts, sorted by count desc."""
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT tags FROM articles WHERE tags != ''"
+        )
+    # Aggregate tag counts in Python
+    counts: dict[str, int] = {}
+    for row in rows:
+        for tag in row["tags"].split(","):
+            tag = tag.strip().lower()
+            if tag:
+                counts[tag] = counts.get(tag, 0) + 1
+    return sorted(
+        [{"name": name, "count": count} for name, count in counts.items()],
+        key=lambda x: x["count"],
+        reverse=True,
+    )
+
+
+async def get_articles_by_tag(tag: str, limit: int = 20) -> list[dict]:
+    """Get articles that contain a specific tag."""
+    tag = tag.strip().lower()
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, slug, title, meta_description, channel, channel_slug, "
+            "channel_avatar, thumbnail, duration, language, tags, created_at "
+            "FROM articles WHERE tags ILIKE $1 "
+            "ORDER BY created_at DESC LIMIT $2",
+            f"%{tag}%", limit,
+        )
+    # Filter for exact tag match (not substring)
+    results = []
+    for row in rows:
+        article_tags = [t.strip().lower() for t in row["tags"].split(",")]
+        if tag in article_tags:
+            results.append(_row_to_dict(row))
+    return results

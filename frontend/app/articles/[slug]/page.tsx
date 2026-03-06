@@ -4,6 +4,13 @@ import ReactMarkdown from "react-markdown";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
+function extractYouTubeId(url: string): string | null {
+  const match = url.match(
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/
+  );
+  return match ? match[1] : null;
+}
+
 const LANG_BADGE: Record<string, { class: string; label: string }> = {
   english: { class: "lang-badge-en", label: "English" },
   hindi: { class: "lang-badge-hi", label: "Hindi" },
@@ -110,20 +117,50 @@ export default async function ArticlePage({ params }: PageProps) {
 
           {/* Article body */}
           <div className="article-text">
-            <ReactMarkdown>{article.article}</ReactMarkdown>
+            <ReactMarkdown
+              components={{
+                a: ({ href, children }) => (
+                  <a href={href} target="_blank" rel="noopener noreferrer">
+                    {children}
+                  </a>
+                ),
+              }}
+            >
+              {article.article}
+            </ReactMarkdown>
           </div>
+
+          {/* YouTube Video Embed — only for YouTube articles (duration > 0) */}
+          {article.duration > 0 && article.youtube_url && (() => {
+            const videoId = extractYouTubeId(article.youtube_url);
+            return videoId ? (
+              <div className="ap-video-section">
+                <div className="ap-video-wrapper">
+                  <iframe
+                    src={`https://www.youtube.com/embed/${videoId}`}
+                    title={article.title}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              </div>
+            ) : null;
+          })()}
 
           {/* Tags */}
           <div className="article-tags">
             <span className="tag">{article.language}</span>
-            {article.title
-              .split(/\s+/)
-              .filter((w: string) => w.length > 4)
-              .slice(0, 5)
-              .map((word: string) => (
-                <span key={word} className="tag">
-                  {word.replace(/[^a-zA-Z0-9]/g, "")}
-                </span>
+            {(article.tags || "")
+              .split(",")
+              .filter(Boolean)
+              .map((tag: string) => (
+                <Link
+                  key={tag.trim()}
+                  href={`/tags/${tag.trim()}`}
+                  className="tag tag-link"
+                >
+                  {tag.trim()}
+                </Link>
               ))}
           </div>
         </article>

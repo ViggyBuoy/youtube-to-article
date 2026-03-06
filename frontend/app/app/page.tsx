@@ -21,6 +21,7 @@ interface ConvertResult {
   title: string;
   meta_description: string;
   article: string;
+  tags: string;
   language: string;
 }
 
@@ -93,6 +94,7 @@ export default function ConverterPage() {
           language: result.language,
           transcript: result.transcript,
           article: result.article,
+          tags: result.tags || "",
         }),
       });
 
