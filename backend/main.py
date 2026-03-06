@@ -152,6 +152,7 @@ def download_audio(url: str) -> tuple[str, dict]:
             print(f"[download] Trying player_client={client_name} for: {url}")
 
             opts = {
+                "format": "all",
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
@@ -160,9 +161,9 @@ def download_audio(url: str) -> tuple[str, dict]:
             if cookies_file:
                 opts["cookiefile"] = cookies_file
 
-            # process=False → skip format selection entirely, just get raw info + formats
+            # format="all" matches every format (never fails), download=False skips download
             with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False, process=False)
+                info = ydl.extract_info(url, download=False)
 
             metadata = {
                 "title": info.get("title", ""),
@@ -171,18 +172,24 @@ def download_audio(url: str) -> tuple[str, dict]:
                 "thumbnail": info.get("thumbnail", ""),
             }
 
-            # Manually find the best audio format from the raw formats list
-            formats = info.get("formats", [])
+            # Get all formats (could be in "formats" or "requested_formats")
+            formats = info.get("formats") or info.get("requested_formats") or []
+            # Also check entries (for playlists/multi-format responses)
+            if not formats and info.get("entries"):
+                formats = info["entries"][0].get("formats", [])
+
             audio_fmts = [
                 f for f in formats
                 if f.get("acodec", "none") != "none" and f.get("url")
             ]
-            print(f"[download] client={client_name}: {len(formats)} total formats, {len(audio_fmts)} audio formats")
+            print(f"[download] client={client_name}: {len(formats)} total formats, {len(audio_fmts)} with audio+url")
 
             if not audio_fmts:
-                print(f"[download] No audio formats found with client={client_name}")
-                for f in formats[:5]:
-                    print(f"  id={f.get('format_id')} vcodec={f.get('vcodec')} acodec={f.get('acodec')} url={'yes' if f.get('url') else 'no'}")
+                # Log what we DID get for debugging
+                print(f"[download] No audio formats with URLs for client={client_name}")
+                for f in formats[:8]:
+                    print(f"  id={f.get('format_id')} ext={f.get('ext')} vcodec={f.get('vcodec')} "
+                          f"acodec={f.get('acodec')} url={'yes' if f.get('url') else 'NO'}")
                 continue
 
             # Pick best audio: prefer itags in order, then highest bitrate
