@@ -20,12 +20,25 @@ def _row_to_dict(row: asyncpg.Record) -> dict:
 async def init_db():
     """Create the connection pool and ensure the articles table exists."""
     global _pool
-    _pool = await asyncpg.create_pool(
-        DATABASE_URL,
-        min_size=2,
-        max_size=10,
-        ssl="require",
-    )
+
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL environment variable is not set!")
+
+    print(f"[db] Connecting to database... (URL starts with: {DATABASE_URL[:30]}...)")
+    try:
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            min_size=1,
+            max_size=10,
+            ssl="require",
+            command_timeout=60,
+            timeout=30,
+        )
+        print(f"[db] Connection pool created successfully")
+    except Exception as e:
+        print(f"[db] ERROR connecting to database: {e}")
+        raise
+
     async with _pool.acquire() as conn:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS articles (
@@ -43,13 +56,7 @@ async def init_db():
                 created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
-        # Migration: add meta_description column to existing tables
-        try:
-            await conn.execute(
-                "ALTER TABLE articles ADD COLUMN meta_description TEXT NOT NULL DEFAULT ''"
-            )
-        except asyncpg.exceptions.DuplicateColumnError:
-            pass
+        print(f"[db] Table verified")
 
 
 async def close_db():

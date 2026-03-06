@@ -28,9 +28,16 @@ from database import init_db, close_db, insert_article, get_all_articles, get_ar
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    print("[startup] Initializing database...")
+    try:
+        await init_db()
+        print("[startup] Database ready!")
+    except Exception as e:
+        print(f"[startup] FATAL: Database init failed: {e}")
+        raise
     yield
     await close_db()
+    print("[shutdown] Database closed")
 
 app = FastAPI(lifespan=lifespan)
 
