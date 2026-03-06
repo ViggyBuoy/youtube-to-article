@@ -42,6 +42,7 @@ async def init_db():
             ssl="require",
             command_timeout=60,
             timeout=30,
+            statement_cache_size=0,  # Disable statement caching to avoid schema migration issues
         )
         print(f"[db] Connection pool created successfully")
     except Exception as e:
