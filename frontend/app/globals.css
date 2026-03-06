@@ -1674,6 +1674,79 @@ body {
   font-size: 12px;
   color: var(--cp-gray-400);
 }
+.adm-log-btn {
+  background: var(--cp-gray-200) !important;
+  color: var(--cp-gray-800) !important;
+}
+.adm-log-btn:hover {
+  background: var(--cp-gray-400) !important;
+}
+
+/* Scraper log */
+.adm-scraper-log {
+  background: #0d0d0d;
+  border: 1px solid var(--cp-gray-200);
+  border-radius: 8px;
+  padding: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 13px;
+}
+.adm-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.adm-log-header h3 {
+  font-family: var(--cp-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cp-gray-600);
+}
+.adm-log-refresh {
+  font-family: var(--cp-sans);
+  font-size: 12px;
+  padding: 4px 12px;
+  background: var(--cp-gray-200);
+  color: var(--cp-gray-800);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.adm-log-refresh:hover {
+  background: var(--cp-gray-400);
+}
+.adm-log-empty {
+  color: var(--cp-gray-400);
+  font-style: italic;
+}
+.adm-log-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.adm-log-entry {
+  display: flex;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.adm-log-time {
+  color: var(--cp-gray-400);
+  flex-shrink: 0;
+  min-width: 80px;
+}
+.adm-log-msg {
+  color: var(--cp-gray-600);
+}
+.adm-log-error .adm-log-msg {
+  color: #e74c3c;
+}
+.adm-log-warn .adm-log-msg {
+  color: #f39c12;
+}
 
 /* Sources list */
 .adm-sources-list {

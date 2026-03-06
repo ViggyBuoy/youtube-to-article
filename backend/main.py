@@ -676,6 +676,18 @@ def generate_thumbnail(youtube_thumbnail_url: str) -> str:
 
 SCRAPE_INTERVAL = int(os.environ.get("SCRAPE_INTERVAL_SECONDS", 1800))  # 30 min
 
+# In-memory scraper log (last 50 entries) for debugging
+_scraper_log: list[dict] = []
+
+
+def _log_scraper(message: str, level: str = "info"):
+    """Add entry to scraper log and print it."""
+    entry = {"time": datetime.now(timezone.utc).isoformat(), "level": level, "msg": message}
+    _scraper_log.append(entry)
+    if len(_scraper_log) > 50:
+        _scraper_log.pop(0)
+    print(f"[scraper] {message}")
+
 _STOPWORDS = frozenset(
     "the a an is in for to of and or but on at by with from as it its that this "
     "are was were be been has have had do does did will would could should may "
@@ -711,23 +723,34 @@ def _is_duplicate_topic(new_title: str, recent_titles: list[str], threshold: flo
 def _fetch_rss_entries(rss_url: str) -> list[dict]:
     """Parse RSS feed and return recent entries."""
     try:
-        feed = feedparser.parse(rss_url)
+        # Fetch RSS with User-Agent to avoid blocks
+        with httpx.Client(timeout=15, headers=_SCRAPER_HEADERS) as client:
+            resp = client.get(rss_url)
+            resp.raise_for_status()
+        feed = feedparser.parse(resp.text)
         entries = []
         for entry in feed.entries[:10]:
             entries.append({
                 "title": entry.get("title", ""),
                 "link": entry.get("link", ""),
             })
+        print(f"[scraper] RSS OK: {len(entries)} entries from {rss_url[:50]}")
         return entries
     except Exception as e:
         print(f"[scraper] RSS parse error for {rss_url}: {e}")
         return []
 
 
+_SCRAPER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; CryptoNewsBot/1.0; +https://github.com)",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
+
+
 def _extract_article_text(url: str) -> tuple[str, str]:
     """Fetch page HTML, extract article text and og:image. Returns (text, og_image_url)."""
     try:
-        with httpx.Client(timeout=20, follow_redirects=True) as client:
+        with httpx.Client(timeout=20, follow_redirects=True, headers=_SCRAPER_HEADERS) as client:
             resp = client.get(url)
             resp.raise_for_status()
             html = resp.text
@@ -836,7 +859,7 @@ async def _run_scrape_cycle():
     if not enabled:
         return
 
-    print(f"[scraper] Starting cycle: {len(enabled)} enabled sources")
+    _log_scraper(f"Starting cycle: {len(enabled)} enabled sources")
     recent_titles = await get_recent_article_titles(hours=24)
     published = 0
     skipped = 0
@@ -844,7 +867,7 @@ async def _run_scrape_cycle():
     for source in enabled:
         try:
             entries = await asyncio.to_thread(_fetch_rss_entries, source["rss_url"])
-            print(f"[scraper] {source['name']}: {len(entries)} RSS entries")
+            _log_scraper(f"{source['name']}: {len(entries)} RSS entries")
 
             for entry in entries:
                 url = entry["link"]
@@ -864,31 +887,26 @@ async def _run_scrape_cycle():
                     continue
 
                 # Extract article text
+                _log_scraper(f"Extracting: {title[:50]}")
                 text, og_image = await asyncio.to_thread(_extract_article_text, url)
                 if not text:
+                    _log_scraper(f"Skip (no text): {title[:50]}", "warn")
                     await insert_seen_url(url, source["id"], title, "skipped_dup")
                     skipped += 1
                     continue
 
                 # Rewrite with Gemini
+                _log_scraper(f"Rewriting: {title[:50]}")
                 article_data = await asyncio.to_thread(generate_rewritten_article, text, title, source["name"])
 
                 # Generate slug
-                slug = generate_slug(article_data["title"], article_data["body"])
+                slug = await asyncio.to_thread(generate_slug, article_data["title"], article_data["body"])
                 existing = await get_article_by_slug(slug)
                 if existing:
                     slug = f"{slug}-{int(time.time())}"
 
-                # Generate thumbnail from og:image
-                thumbnail = ""
-                if og_image:
-                    try:
-                        thumbnail = await asyncio.to_thread(generate_thumbnail, og_image)
-                    except Exception as e:
-                        print(f"[scraper] Thumbnail generation failed: {e}")
-                        thumbnail = og_image
-                if not thumbnail:
-                    thumbnail = og_image or ""
+                # Use og:image directly as thumbnail (skip AI generation for speed)
+                thumbnail = og_image or ""
 
                 # Publish
                 channel_slug = generate_channel_slug(source["name"])
@@ -910,17 +928,17 @@ async def _run_scrape_cycle():
                 await insert_seen_url(url, source["id"], article_data["title"], "published")
                 recent_titles.append(article_data["title"])
                 published += 1
-                print(f"[scraper] Published: '{article_data['title'][:60]}'")
+                _log_scraper(f"Published: '{article_data['title'][:60]}'")
 
         except Exception as e:
-            print(f"[scraper] Error processing source '{source['name']}': {e}")
+            _log_scraper(f"Error processing source '{source['name']}': {e}", "error")
 
-    print(f"[scraper] Cycle complete: {published} published, {skipped} skipped")
+    _log_scraper(f"Cycle complete: {published} published, {skipped} skipped")
 
 
 async def _scraper_loop():
     """Background loop that runs scrape cycles every SCRAPE_INTERVAL seconds."""
-    # Wait a bit on startup to let everything initialize
+    _log_scraper("Background loop started, waiting 10s for init...")
     await asyncio.sleep(10)
     while True:
         try:
@@ -1176,6 +1194,13 @@ async def admin_trigger_scrape(user: str = Depends(_verify_admin_token)):
     """Manually trigger one scrape cycle."""
     if not SCRAPER_AVAILABLE:
         raise HTTPException(status_code=503, detail="Scraper dependencies not installed")
+    _log_scraper("Manual trigger requested")
     asyncio.create_task(_run_scrape_cycle())
     return {"status": "Scrape cycle started"}
+
+
+@app.get("/api/admin/sources/log")
+async def admin_scraper_log(user: str = Depends(_verify_admin_token)):
+    """Get recent scraper activity log for debugging."""
+    return {"log": _scraper_log, "scraper_available": SCRAPER_AVAILABLE}
 

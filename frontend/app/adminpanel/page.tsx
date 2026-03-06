@@ -170,6 +170,8 @@ function AdminDashboard({
   const [addingSource, setAddingSource] = useState(false);
   const [triggerStatus, setTriggerStatus] = useState("");
   const [sourceDeleteConfirm, setSourceDeleteConfirm] = useState<number | null>(null);
+  const [scraperLog, setScraperLog] = useState<{time: string; level: string; msg: string}[]>([]);
+  const [showLog, setShowLog] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -366,6 +368,20 @@ function AdminDashboard({
     } catch {
       setTriggerStatus("error");
       setTimeout(() => setTriggerStatus(""), 3000);
+    }
+  }
+
+  async function fetchScraperLog() {
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/sources/log`, {
+        headers: authHeaders(token),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setScraperLog(data.log || []);
+      }
+    } catch {
+      // ignore
     }
   }
 
@@ -658,10 +674,40 @@ function AdminDashboard({
                   ? "Failed to trigger"
                   : "Run Scrape Now"}
               </button>
+              <button
+                className="adm-trigger-btn adm-log-btn"
+                onClick={() => { fetchScraperLog(); setShowLog(!showLog); }}
+              >
+                {showLog ? "Hide Log" : "Scraper Log"}
+              </button>
               <span className="adm-trigger-hint">
                 Auto-runs every 30 minutes
               </span>
             </div>
+
+            {/* Scraper log */}
+            {showLog && (
+              <div className="adm-scraper-log">
+                <div className="adm-log-header">
+                  <h3>Scraper Activity Log</h3>
+                  <button className="adm-log-refresh" onClick={fetchScraperLog}>Refresh</button>
+                </div>
+                {scraperLog.length === 0 ? (
+                  <p className="adm-log-empty">No scraper activity yet. Click &quot;Run Scrape Now&quot; to start.</p>
+                ) : (
+                  <div className="adm-log-entries">
+                    {[...scraperLog].reverse().map((entry, i) => (
+                      <div key={i} className={`adm-log-entry adm-log-${entry.level}`}>
+                        <span className="adm-log-time">
+                          {new Date(entry.time).toLocaleTimeString()}
+                        </span>
+                        <span className="adm-log-msg">{entry.msg}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Sources list */}
             <div className="adm-sources-list">
