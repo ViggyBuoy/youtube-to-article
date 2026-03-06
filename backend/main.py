@@ -126,11 +126,15 @@ def download_audio(url: str) -> tuple[str, dict]:
         outtmpl = os.path.join(tmp_dir, "audio.%(ext)s")
 
         ydl_opts = {
-            "format": "bestaudio/best",
+            "format": "bestaudio*/best",
             "outtmpl": outtmpl,
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "m4a",
+            }],
         }
 
         # Pass cookies if available (needed for cloud servers)
