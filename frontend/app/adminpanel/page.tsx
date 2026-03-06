@@ -27,6 +27,17 @@ interface Author {
   article_count: number;
 }
 
+interface Source {
+  id: number;
+  name: string;
+  rss_url: string;
+  enabled: boolean;
+  published_count: number;
+  skipped_count: number;
+  total_seen: number;
+  created_at: string;
+}
+
 /* ── helpers ── */
 function authHeaders(token: string) {
   return {
@@ -143,13 +154,22 @@ function AdminDashboard({
   token: string;
   onLogout: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState<"articles" | "sources">("articles");
   const [authors, setAuthors] = useState<Author[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
+  const [sources, setSources] = useState<Source[]>([]);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
   const [editingArticle, setEditingArticle] = useState<Article | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState("");
+
+  // Sources state
+  const [newSourceName, setNewSourceName] = useState("");
+  const [newSourceUrl, setNewSourceUrl] = useState("");
+  const [addingSource, setAddingSource] = useState(false);
+  const [triggerStatus, setTriggerStatus] = useState("");
+  const [sourceDeleteConfirm, setSourceDeleteConfirm] = useState<number | null>(null);
 
   useEffect(() => {
     loadData();
@@ -158,9 +178,12 @@ function AdminDashboard({
   async function loadData() {
     setLoading(true);
     try {
-      const [authorsRes, articlesRes] = await Promise.all([
+      const [authorsRes, articlesRes, sourcesRes] = await Promise.all([
         fetch(`${API_BASE}/api/authors`),
         fetch(`${API_BASE}/api/admin/articles`, {
+          headers: authHeaders(token),
+        }),
+        fetch(`${API_BASE}/api/admin/sources`, {
           headers: authHeaders(token),
         }),
       ]);
@@ -174,6 +197,11 @@ function AdminDashboard({
         setArticles(d.articles || []);
       } else if (articlesRes.status === 401) {
         onLogout();
+        return;
+      }
+      if (sourcesRes.ok) {
+        const d = await sourcesRes.json();
+        setSources(d.sources || []);
       }
     } catch {
       // ignore
@@ -244,7 +272,6 @@ function AdminDashboard({
   }
 
   async function handleEditClick(slug: string) {
-    // Fetch full article with body
     try {
       const res = await fetch(`${API_BASE}/api/articles/${slug}`);
       if (res.ok) {
@@ -253,6 +280,92 @@ function AdminDashboard({
       }
     } catch {
       // ignore
+    }
+  }
+
+  /* ── Source handlers ── */
+  async function handleAddSource(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newSourceName.trim() || !newSourceUrl.trim()) return;
+    setAddingSource(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/sources`, {
+        method: "POST",
+        headers: authHeaders(token),
+        body: JSON.stringify({ name: newSourceName.trim(), rss_url: newSourceUrl.trim() }),
+      });
+      if (res.ok) {
+        setNewSourceName("");
+        setNewSourceUrl("");
+        // Reload sources
+        const sourcesRes = await fetch(`${API_BASE}/api/admin/sources`, {
+          headers: authHeaders(token),
+        });
+        if (sourcesRes.ok) {
+          const d = await sourcesRes.json();
+          setSources(d.sources || []);
+        }
+      } else if (res.status === 401) {
+        onLogout();
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(data?.detail || "Failed to add source");
+      }
+    } catch {
+      alert("Failed to add source");
+    } finally {
+      setAddingSource(false);
+    }
+  }
+
+  async function handleToggleSource(sourceId: number) {
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/sources/${sourceId}/toggle`, {
+        method: "PUT",
+        headers: authHeaders(token),
+      });
+      if (res.ok) {
+        setSources((prev) =>
+          prev.map((s) => (s.id === sourceId ? { ...s, enabled: !s.enabled } : s))
+        );
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleDeleteSource(sourceId: number) {
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/sources/${sourceId}`, {
+        method: "DELETE",
+        headers: authHeaders(token),
+      });
+      if (res.ok) {
+        setSources((prev) => prev.filter((s) => s.id !== sourceId));
+        setSourceDeleteConfirm(null);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleTriggerScrape() {
+    setTriggerStatus("running");
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/sources/trigger`, {
+        method: "POST",
+        headers: authHeaders(token),
+      });
+      if (res.ok) {
+        setTriggerStatus("started");
+        setTimeout(() => setTriggerStatus(""), 4000);
+      } else {
+        setTriggerStatus("error");
+        setTimeout(() => setTriggerStatus(""), 3000);
+      }
+    } catch {
+      setTriggerStatus("error");
+      setTimeout(() => setTriggerStatus(""), 3000);
     }
   }
 
@@ -354,107 +467,250 @@ function AdminDashboard({
           </button>
         </div>
 
-        <div className="adm-dashboard">
-          {/* Authors sidebar */}
-          <div className="adm-authors">
-            <h3 className="adm-section-title">Authors</h3>
-            <button
-              className={`adm-author-item ${!selectedAuthor ? "adm-author-active" : ""}`}
-              onClick={() => setSelectedAuthor(null)}
-            >
-              <div className="adm-author-avatar-sm">All</div>
-              <div>
-                <div className="adm-author-name">All Authors</div>
-                <div className="adm-author-count">
-                  {articles.length} articles
-                </div>
-              </div>
-            </button>
-            {authors.map((a) => (
+        {/* Tab navigation */}
+        <div className="adm-tabs">
+          <button
+            className={`adm-tab ${activeTab === "articles" ? "adm-tab-active" : ""}`}
+            onClick={() => setActiveTab("articles")}
+          >
+            Articles
+          </button>
+          <button
+            className={`adm-tab ${activeTab === "sources" ? "adm-tab-active" : ""}`}
+            onClick={() => setActiveTab("sources")}
+          >
+            Sources
+            {sources.length > 0 && (
+              <span className="adm-tab-count">{sources.length}</span>
+            )}
+          </button>
+        </div>
+
+        {/* ── Articles Tab ── */}
+        {activeTab === "articles" && (
+          <div className="adm-dashboard">
+            {/* Authors sidebar */}
+            <div className="adm-authors">
+              <h3 className="adm-section-title">Authors</h3>
               <button
-                key={a.channel_slug}
-                className={`adm-author-item ${selectedAuthor === a.channel_slug ? "adm-author-active" : ""}`}
-                onClick={() => setSelectedAuthor(a.channel_slug)}
+                className={`adm-author-item ${!selectedAuthor ? "adm-author-active" : ""}`}
+                onClick={() => setSelectedAuthor(null)}
               >
-                {a.channel_avatar ? (
-                  <img
-                    src={a.channel_avatar}
-                    alt={a.channel}
-                    className="adm-author-avatar-img"
-                  />
-                ) : (
-                  <div className="adm-author-avatar-sm">
-                    {a.channel.charAt(0).toUpperCase()}
-                  </div>
-                )}
+                <div className="adm-author-avatar-sm">All</div>
                 <div>
-                  <div className="adm-author-name">{a.channel}</div>
+                  <div className="adm-author-name">All Authors</div>
                   <div className="adm-author-count">
-                    {a.article_count} article
-                    {a.article_count !== 1 ? "s" : ""}
+                    {articles.length} articles
                   </div>
                 </div>
               </button>
-            ))}
-          </div>
+              {authors.map((a) => (
+                <button
+                  key={a.channel_slug}
+                  className={`adm-author-item ${selectedAuthor === a.channel_slug ? "adm-author-active" : ""}`}
+                  onClick={() => setSelectedAuthor(a.channel_slug)}
+                >
+                  {a.channel_avatar ? (
+                    <img
+                      src={a.channel_avatar}
+                      alt={a.channel}
+                      className="adm-author-avatar-img"
+                    />
+                  ) : (
+                    <div className="adm-author-avatar-sm">
+                      {a.channel.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <div className="adm-author-name">{a.channel}</div>
+                    <div className="adm-author-count">
+                      {a.article_count} article
+                      {a.article_count !== 1 ? "s" : ""}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
 
-          {/* Articles list */}
-          <div className="adm-articles">
-            <div className="adm-articles-head">
-              <h3 className="adm-section-title">
-                {selectedAuthorData
-                  ? `Articles by ${selectedAuthorData.channel}`
-                  : "All Articles"}
-              </h3>
-              <span className="adm-count-badge">
-                {filteredArticles.length}
+            {/* Articles list */}
+            <div className="adm-articles">
+              <div className="adm-articles-head">
+                <h3 className="adm-section-title">
+                  {selectedAuthorData
+                    ? `Articles by ${selectedAuthorData.channel}`
+                    : "All Articles"}
+                </h3>
+                <span className="adm-count-badge">
+                  {filteredArticles.length}
+                </span>
+              </div>
+
+              {filteredArticles.length === 0 ? (
+                <div className="adm-empty">No articles found</div>
+              ) : (
+                <div className="adm-articles-list">
+                  {filteredArticles.map((a) => (
+                    <div key={a.slug} className="adm-article-row">
+                      <div className="adm-article-thumb">
+                        <img src={a.thumbnail} alt={a.title} />
+                      </div>
+                      <div className="adm-article-info">
+                        <h4 className="adm-article-title">
+                          <Link href={`/articles/${a.slug}`}>{a.title}</Link>
+                        </h4>
+                        <div className="adm-article-meta">
+                          <span>{a.channel}</span>
+                          <span>&middot;</span>
+                          <span>{a.language}</span>
+                          <span>&middot;</span>
+                          <span>
+                            {new Date(a.created_at + "Z").toLocaleDateString(
+                              "en-US",
+                              { month: "short", day: "numeric", year: "numeric" }
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="adm-article-actions">
+                        <button
+                          className="adm-btn-edit"
+                          onClick={() => handleEditClick(a.slug)}
+                        >
+                          Edit
+                        </button>
+                        {deleteConfirm === a.slug ? (
+                          <div className="adm-delete-confirm">
+                            <button
+                              className="adm-btn-delete-yes"
+                              onClick={() => handleDelete(a.slug)}
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              className="adm-btn-cancel"
+                              onClick={() => setDeleteConfirm(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            className="adm-btn-delete"
+                            onClick={() => setDeleteConfirm(a.slug)}
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Sources Tab ── */}
+        {activeTab === "sources" && (
+          <div className="adm-sources-panel">
+            {/* Add source form */}
+            <form onSubmit={handleAddSource} className="adm-source-form">
+              <h3 className="adm-section-title">Add RSS Source</h3>
+              <div className="adm-source-form-row">
+                <input
+                  type="text"
+                  value={newSourceName}
+                  onChange={(e) => setNewSourceName(e.target.value)}
+                  className="adm-input"
+                  placeholder="Source name (e.g. CoinTelegraph)"
+                  required
+                />
+                <input
+                  type="url"
+                  value={newSourceUrl}
+                  onChange={(e) => setNewSourceUrl(e.target.value)}
+                  className="adm-input adm-input-url"
+                  placeholder="RSS feed URL"
+                  required
+                />
+                <button
+                  type="submit"
+                  className="adm-source-add-btn"
+                  disabled={addingSource}
+                >
+                  {addingSource ? "Adding..." : "Add Source"}
+                </button>
+              </div>
+            </form>
+
+            {/* Trigger scrape */}
+            <div className="adm-source-trigger">
+              <button
+                className="adm-trigger-btn"
+                onClick={handleTriggerScrape}
+                disabled={triggerStatus === "running"}
+              >
+                {triggerStatus === "running"
+                  ? "Starting..."
+                  : triggerStatus === "started"
+                  ? "Scrape cycle started!"
+                  : triggerStatus === "error"
+                  ? "Failed to trigger"
+                  : "Run Scrape Now"}
+              </button>
+              <span className="adm-trigger-hint">
+                Auto-runs every 30 minutes
               </span>
             </div>
 
-            {filteredArticles.length === 0 ? (
-              <div className="adm-empty">No articles found</div>
-            ) : (
-              <div className="adm-articles-list">
-                {filteredArticles.map((a) => (
-                  <div key={a.slug} className="adm-article-row">
-                    <div className="adm-article-thumb">
-                      <img src={a.thumbnail} alt={a.title} />
-                    </div>
-                    <div className="adm-article-info">
-                      <h4 className="adm-article-title">
-                        <Link href={`/articles/${a.slug}`}>{a.title}</Link>
-                      </h4>
-                      <div className="adm-article-meta">
-                        <span>{a.channel}</span>
-                        <span>&middot;</span>
-                        <span>{a.language}</span>
-                        <span>&middot;</span>
-                        <span>
-                          {new Date(a.created_at + "Z").toLocaleDateString(
-                            "en-US",
-                            { month: "short", day: "numeric", year: "numeric" }
-                          )}
+            {/* Sources list */}
+            <div className="adm-sources-list">
+              <h3 className="adm-section-title">
+                Configured Sources
+                <span className="adm-count-badge">{sources.length}</span>
+              </h3>
+
+              {sources.length === 0 ? (
+                <div className="adm-empty">
+                  No sources added yet. Add an RSS feed above to start auto-scraping.
+                </div>
+              ) : (
+                sources.map((s) => (
+                  <div key={s.id} className={`adm-source-row ${!s.enabled ? "adm-source-disabled" : ""}`}>
+                    <div className="adm-source-info">
+                      <div className="adm-source-name">{s.name}</div>
+                      <div className="adm-source-url">{s.rss_url}</div>
+                      <div className="adm-source-stats">
+                        <span className="adm-source-stat-pub">
+                          {s.published_count} published
+                        </span>
+                        <span className="adm-source-stat-skip">
+                          {s.skipped_count} skipped
+                        </span>
+                        <span className="adm-source-stat-total">
+                          {s.total_seen} total processed
                         </span>
                       </div>
                     </div>
-                    <div className="adm-article-actions">
+                    <div className="adm-source-actions">
                       <button
-                        className="adm-btn-edit"
-                        onClick={() => handleEditClick(a.slug)}
+                        className={`adm-source-toggle ${s.enabled ? "adm-source-toggle-on" : "adm-source-toggle-off"}`}
+                        onClick={() => handleToggleSource(s.id)}
+                        title={s.enabled ? "Disable" : "Enable"}
                       >
-                        Edit
+                        {s.enabled ? "ON" : "OFF"}
                       </button>
-                      {deleteConfirm === a.slug ? (
+                      {sourceDeleteConfirm === s.id ? (
                         <div className="adm-delete-confirm">
                           <button
                             className="adm-btn-delete-yes"
-                            onClick={() => handleDelete(a.slug)}
+                            onClick={() => handleDeleteSource(s.id)}
                           >
                             Confirm
                           </button>
                           <button
                             className="adm-btn-cancel"
-                            onClick={() => setDeleteConfirm(null)}
+                            onClick={() => setSourceDeleteConfirm(null)}
                           >
                             Cancel
                           </button>
@@ -462,18 +718,18 @@ function AdminDashboard({
                       ) : (
                         <button
                           className="adm-btn-delete"
-                          onClick={() => setDeleteConfirm(a.slug)}
+                          onClick={() => setSourceDeleteConfirm(s.id)}
                         >
                           Delete
                         </button>
                       )}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+                ))
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import asyncpg
 import os
 import re
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -87,7 +88,29 @@ async def init_db():
                 )
             print(f"[db] Backfill complete")
 
-        print(f"[db] Table verified")
+        print(f"[db] Articles table verified")
+
+        # ── Sources + seen_urls tables ──
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS sources (
+                id         SERIAL PRIMARY KEY,
+                name       TEXT NOT NULL,
+                rss_url    TEXT UNIQUE NOT NULL,
+                enabled    BOOLEAN NOT NULL DEFAULT true,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS seen_urls (
+                id         SERIAL PRIMARY KEY,
+                url        TEXT UNIQUE NOT NULL,
+                source_id  INTEGER REFERENCES sources(id) ON DELETE CASCADE,
+                title      TEXT NOT NULL DEFAULT '',
+                status     TEXT NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        print(f"[db] Sources + seen_urls tables verified")
 
 
 async def close_db():
@@ -203,3 +226,81 @@ async def delete_article(slug: str) -> bool:
             "DELETE FROM articles WHERE slug = $1", slug
         )
         return result != "DELETE 0"
+
+
+# ── Sources CRUD ─────────────────────────────────────────────────────────────
+
+async def insert_source(name: str, rss_url: str) -> dict:
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO sources (name, rss_url)
+               VALUES ($1, $2)
+               RETURNING *""",
+            name, rss_url,
+        )
+        return _row_to_dict(row)
+
+
+async def get_all_sources() -> list[dict]:
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT s.*,
+                   COUNT(su.id) FILTER (WHERE su.status = 'published') AS published_count,
+                   COUNT(su.id) FILTER (WHERE su.status = 'skipped_dup') AS skipped_count,
+                   COUNT(su.id) AS total_seen
+            FROM sources s
+            LEFT JOIN seen_urls su ON su.source_id = s.id
+            GROUP BY s.id
+            ORDER BY s.created_at DESC
+        """)
+        return [_row_to_dict(row) for row in rows]
+
+
+async def toggle_source(source_id: int, enabled: bool) -> dict | None:
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "UPDATE sources SET enabled = $1 WHERE id = $2 RETURNING *",
+            enabled, source_id,
+        )
+        return _row_to_dict(row) if row else None
+
+
+async def delete_source(source_id: int) -> bool:
+    async with _pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM sources WHERE id = $1", source_id
+        )
+        return result != "DELETE 0"
+
+
+# ── Seen URLs ────────────────────────────────────────────────────────────────
+
+async def is_url_seen(url: str) -> bool:
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id FROM seen_urls WHERE url = $1", url
+        )
+        return row is not None
+
+
+async def insert_seen_url(url: str, source_id: int, title: str, status: str) -> dict:
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO seen_urls (url, source_id, title, status)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (url) DO UPDATE SET status = $4
+               RETURNING *""",
+            url, source_id, title, status,
+        )
+        return _row_to_dict(row)
+
+
+async def get_recent_article_titles(hours: int = 24) -> list[str]:
+    """Get article titles published in the last N hours for dedup."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT title FROM articles WHERE created_at >= $1",
+            cutoff,
+        )
+        return [row["title"] for row in rows]

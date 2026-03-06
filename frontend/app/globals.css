@@ -1564,6 +1564,215 @@ body {
   }
 }
 
+/* ── Admin: Tabs ─────────────────────────────────────── */
+.adm-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--cp-gray-200);
+  margin-bottom: 0;
+}
+.adm-tab {
+  padding: 12px 24px;
+  font-family: var(--cp-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cp-gray-600);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.adm-tab:hover {
+  color: var(--cp-gray-800);
+}
+.adm-tab-active {
+  color: var(--cp-accent);
+  border-bottom-color: var(--cp-accent);
+}
+.adm-tab-count {
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--cp-gray-200);
+  color: var(--cp-gray-600);
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+.adm-tab-active .adm-tab-count {
+  background: var(--cp-accent);
+  color: #fff;
+}
+
+/* ── Admin: Sources Panel ────────────────────────────── */
+.adm-sources-panel {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.adm-source-form {
+  background: var(--cp-gray-100);
+  border: 1px solid var(--cp-gray-200);
+  border-radius: 12px;
+  padding: 20px;
+}
+.adm-source-form .adm-section-title {
+  margin-bottom: 12px;
+}
+.adm-source-form-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+.adm-source-form-row .adm-input {
+  flex: 1;
+}
+.adm-input-url {
+  flex: 2 !important;
+}
+.adm-source-add-btn {
+  padding: 9px 20px;
+  font-family: var(--cp-sans);
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--cp-accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.adm-source-add-btn:hover { opacity: 0.85; }
+.adm-source-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Trigger button */
+.adm-source-trigger {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.adm-trigger-btn {
+  padding: 10px 24px;
+  font-family: var(--cp-sans);
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--cp-gray-800);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.adm-trigger-btn:hover { opacity: 0.85; }
+.adm-trigger-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.adm-trigger-hint {
+  font-family: var(--cp-sans);
+  font-size: 12px;
+  color: var(--cp-gray-400);
+}
+
+/* Sources list */
+.adm-sources-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.adm-sources-list .adm-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.adm-source-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: var(--cp-gray-100);
+  border: 1px solid var(--cp-gray-200);
+  border-radius: 10px;
+  transition: opacity 0.15s;
+}
+.adm-source-disabled {
+  opacity: 0.5;
+}
+.adm-source-info {
+  flex: 1;
+  min-width: 0;
+}
+.adm-source-name {
+  font-family: var(--cp-sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--cp-gray-800);
+}
+.adm-source-url {
+  font-family: var(--cp-mono);
+  font-size: 12px;
+  color: var(--cp-gray-400);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.adm-source-stats {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  font-family: var(--cp-sans);
+  font-size: 12px;
+}
+.adm-source-stat-pub { color: #22c55e; }
+.adm-source-stat-skip { color: #f59e0b; }
+.adm-source-stat-total { color: var(--cp-gray-400); }
+
+.adm-source-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 16px;
+}
+.adm-source-toggle {
+  padding: 5px 14px;
+  font-family: var(--cp-mono);
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.adm-source-toggle-on {
+  background: #22c55e15;
+  color: #22c55e;
+  border-color: #22c55e40;
+}
+.adm-source-toggle-off {
+  background: var(--cp-gray-100);
+  color: var(--cp-gray-400);
+  border-color: var(--cp-gray-200);
+}
+
+@media (max-width: 768px) {
+  .adm-source-form-row {
+    flex-direction: column;
+  }
+  .adm-source-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .adm-source-actions {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
 /* ── CoinDesk-Style Article Page (ap-*) ────────────────── */
 
 /* two-column article layout */

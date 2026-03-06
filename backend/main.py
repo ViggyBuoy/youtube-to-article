@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import os
@@ -23,6 +24,8 @@ from google import genai
 from google.genai import types
 import bcrypt
 import jwt
+import feedparser
+from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -31,13 +34,19 @@ from database import (
     init_db, close_db, insert_article, get_all_articles, get_article_by_slug,
     get_all_channels, get_articles_by_channel_slug, generate_channel_slug,
     update_article, delete_article,
+    insert_source, get_all_sources, toggle_source, delete_source,
+    is_url_seen, insert_seen_url, get_recent_article_titles,
 )
 
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 
+_scraper_task: asyncio.Task | None = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _scraper_task
     print("[startup] Initializing database...")
     try:
         await init_db()
@@ -45,7 +54,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[startup] FATAL: Database init failed: {e}")
         raise
+    # Start background scraper
+    _scraper_task = asyncio.create_task(_scraper_loop())
+    print("[startup] Background scraper started (30-min interval)")
     yield
+    # Shutdown
+    if _scraper_task:
+        _scraper_task.cancel()
+        try:
+            await _scraper_task
+        except asyncio.CancelledError:
+            pass
     await close_db()
     print("[shutdown] Database closed")
 
@@ -127,6 +146,11 @@ class UpdateArticleRequest(BaseModel):
     title: str
     meta_description: str = ""
     article: str
+
+
+class AddSourceRequest(BaseModel):
+    name: str
+    rss_url: str
 
 
 # ── Language instructions for GPT ─────────────────────────────────────────────
@@ -637,6 +661,264 @@ def generate_thumbnail(youtube_thumbnail_url: str) -> str:
         return youtube_thumbnail_url
 
 
+# ── Scraper: RSS parsing, article extraction, dedup, rewrite ─────────────────
+
+SCRAPE_INTERVAL = int(os.environ.get("SCRAPE_INTERVAL_SECONDS", 1800))  # 30 min
+
+_STOPWORDS = frozenset(
+    "the a an is in for to of and or but on at by with from as it its that this "
+    "are was were be been has have had do does did will would could should may "
+    "can not no so if then than also just about up out into over after before "
+    "between through during each all both few more most other some such only same "
+    "very what which who how when where why new".split()
+)
+
+
+def _extract_keywords(text: str) -> set[str]:
+    """Extract meaningful keywords from text for dedup comparison."""
+    words = re.sub(r"[^a-z0-9\s]", "", text.lower()).split()
+    return {w for w in words if w not in _STOPWORDS and len(w) > 2}
+
+
+def _is_duplicate_topic(new_title: str, recent_titles: list[str], threshold: float = 0.45) -> bool:
+    """Check if new_title is too similar to any recent title by keyword overlap."""
+    new_kw = _extract_keywords(new_title)
+    if not new_kw:
+        return False
+    for existing_title in recent_titles:
+        existing_kw = _extract_keywords(existing_title)
+        if not existing_kw:
+            continue
+        overlap = len(new_kw & existing_kw)
+        ratio = overlap / min(len(new_kw), len(existing_kw))
+        if ratio >= threshold:
+            print(f"[scraper] Duplicate detected: '{new_title[:50]}' ~ '{existing_title[:50]}' (ratio={ratio:.2f})")
+            return True
+    return False
+
+
+def _fetch_rss_entries(rss_url: str) -> list[dict]:
+    """Parse RSS feed and return recent entries."""
+    try:
+        feed = feedparser.parse(rss_url)
+        entries = []
+        for entry in feed.entries[:10]:
+            entries.append({
+                "title": entry.get("title", ""),
+                "link": entry.get("link", ""),
+            })
+        return entries
+    except Exception as e:
+        print(f"[scraper] RSS parse error for {rss_url}: {e}")
+        return []
+
+
+def _extract_article_text(url: str) -> tuple[str, str]:
+    """Fetch page HTML, extract article text and og:image. Returns (text, og_image_url)."""
+    try:
+        with httpx.Client(timeout=20, follow_redirects=True) as client:
+            resp = client.get(url)
+            resp.raise_for_status()
+            html = resp.text
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Extract og:image for thumbnail
+        og_image = ""
+        og_tag = soup.find("meta", property="og:image")
+        if og_tag and og_tag.get("content"):
+            og_image = og_tag["content"]
+
+        # Remove script/style tags
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+            tag.decompose()
+
+        # Try <article> first, then <main>, then largest text block
+        content = None
+        for selector in ["article", "main", '[role="main"]']:
+            el = soup.find(selector)
+            if el:
+                content = el.get_text(separator="\n", strip=True)
+                break
+
+        if not content:
+            # Fallback: get body text
+            body = soup.find("body")
+            content = body.get_text(separator="\n", strip=True) if body else soup.get_text(separator="\n", strip=True)
+
+        # Clean up
+        lines = [line.strip() for line in content.split("\n") if line.strip()]
+        text = "\n".join(lines)[:15000]
+
+        if len(text) < 200:
+            print(f"[scraper] Article text too short ({len(text)} chars) for {url}")
+            return "", og_image
+
+        return text, og_image
+    except Exception as e:
+        print(f"[scraper] Failed to extract text from {url}: {e}")
+        return "", ""
+
+
+def generate_rewritten_article(original_text: str, original_title: str, source_name: str) -> dict:
+    """Use Gemini to rewrite a news article in original voice."""
+    prompt = f"""You are a crypto news editor. Transform the following article into an original, well-structured crypto news piece.
+
+Source: {source_name}
+Original Title: {original_title}
+
+INSTRUCTIONS:
+1. Write in THIRD PERSON, objective journalist voice
+2. Do NOT copy phrases verbatim from the source — rewrite everything in your own words
+3. Maintain all factual accuracy — preserve key data points, numbers, quotes
+4. Structure: compelling headline, 2-3 sentence intro summary, then body with H2 subheadings
+5. Target 600-1000 words
+6. Use Markdown formatting (H2, bold, lists, tables where appropriate)
+7. **Bold** key data points and statistics
+8. Cite sources by name only — no URLs or hyperlinks
+9. Title MUST be plain text only — NO markdown, asterisks, or quotes
+
+You MUST return valid JSON with exactly these three fields:
+{{
+  "title": "A compelling, SEO-optimized headline (50-80 characters, plain text only)",
+  "meta_description": "A 1-2 sentence summary for SEO (150-160 characters)",
+  "body": "The full rewritten article in Markdown (600-1000 words)"
+}}
+
+Return ONLY the JSON object, no markdown code fences, no extra text.
+
+ARTICLE TO REWRITE:
+{original_text}"""
+
+    print(f"[scraper] Rewriting: '{original_title[:60]}' | Model: gemini-3.1-flash-lite-preview")
+
+    response = gemini_client.models.generate_content(
+        model="gemini-3.1-flash-lite-preview",
+        contents=prompt,
+        config=types.GenerateContentConfig(temperature=0.6),
+    )
+    raw = response.text.strip()
+
+    try:
+        cleaned = raw
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+        result = json.loads(cleaned)
+        clean_title = result.get("title", original_title).strip().strip("*").strip('"').strip()
+        return {
+            "title": clean_title,
+            "meta_description": result.get("meta_description", "").strip().strip('"'),
+            "body": result.get("body", raw),
+        }
+    except (json.JSONDecodeError, AttributeError) as e:
+        print(f"[scraper] JSON parse failed ({e}), using raw text")
+        return {"title": original_title, "meta_description": "", "body": raw}
+
+
+async def _run_scrape_cycle():
+    """Run one full scrape cycle across all enabled sources."""
+    sources = await get_all_sources()
+    enabled = [s for s in sources if s.get("enabled")]
+    if not enabled:
+        return
+
+    print(f"[scraper] Starting cycle: {len(enabled)} enabled sources")
+    recent_titles = await get_recent_article_titles(hours=24)
+    published = 0
+    skipped = 0
+
+    for source in enabled:
+        try:
+            entries = _fetch_rss_entries(source["rss_url"])
+            print(f"[scraper] {source['name']}: {len(entries)} RSS entries")
+
+            for entry in entries:
+                url = entry["link"]
+                title = entry["title"]
+
+                if not url:
+                    continue
+
+                # Already processed?
+                if await is_url_seen(url):
+                    continue
+
+                # Topic dedup
+                if _is_duplicate_topic(title, recent_titles):
+                    await insert_seen_url(url, source["id"], title, "skipped_dup")
+                    skipped += 1
+                    continue
+
+                # Extract article text
+                text, og_image = _extract_article_text(url)
+                if not text:
+                    await insert_seen_url(url, source["id"], title, "skipped_dup")
+                    skipped += 1
+                    continue
+
+                # Rewrite with Gemini
+                article_data = generate_rewritten_article(text, title, source["name"])
+
+                # Generate slug
+                slug = generate_slug(article_data["title"], article_data["body"])
+                existing = await get_article_by_slug(slug)
+                if existing:
+                    slug = f"{slug}-{int(time.time())}"
+
+                # Generate thumbnail from og:image
+                thumbnail = ""
+                if og_image:
+                    try:
+                        thumbnail = generate_thumbnail(og_image)
+                    except Exception as e:
+                        print(f"[scraper] Thumbnail generation failed: {e}")
+                        thumbnail = og_image
+                if not thumbnail:
+                    thumbnail = og_image or ""
+
+                # Publish
+                channel_slug = generate_channel_slug(source["name"])
+                await insert_article(
+                    slug=slug,
+                    title=article_data["title"],
+                    meta_description=article_data["meta_description"],
+                    channel=source["name"],
+                    channel_slug=channel_slug,
+                    channel_avatar="",
+                    thumbnail=thumbnail,
+                    duration=0,
+                    youtube_url=url,
+                    language="english",
+                    transcript=text,
+                    article=article_data["body"],
+                )
+
+                await insert_seen_url(url, source["id"], article_data["title"], "published")
+                recent_titles.append(article_data["title"])
+                published += 1
+                print(f"[scraper] Published: '{article_data['title'][:60]}'")
+
+        except Exception as e:
+            print(f"[scraper] Error processing source '{source['name']}': {e}")
+
+    print(f"[scraper] Cycle complete: {published} published, {skipped} skipped")
+
+
+async def _scraper_loop():
+    """Background loop that runs scrape cycles every SCRAPE_INTERVAL seconds."""
+    # Wait a bit on startup to let everything initialize
+    await asyncio.sleep(10)
+    while True:
+        try:
+            await _run_scrape_cycle()
+        except Exception as e:
+            print(f"[scraper] Loop error: {e}")
+        await asyncio.sleep(SCRAPE_INTERVAL)
+
+
 # ── API Endpoints ─────────────────────────────────────────────────────────────
 
 @app.get("/api/debug-formats")
@@ -832,4 +1114,49 @@ async def admin_delete_article(slug: str, user: str = Depends(_verify_admin_toke
     if not deleted:
         raise HTTPException(status_code=404, detail="Article not found")
     return {"deleted": True}
+
+
+# ── Admin Source Endpoints ───────────────────────────────────────────────────
+
+@app.get("/api/admin/sources")
+async def admin_list_sources(user: str = Depends(_verify_admin_token)):
+    sources = await get_all_sources()
+    return {"sources": sources}
+
+
+@app.post("/api/admin/sources")
+async def admin_add_source(req: AddSourceRequest, user: str = Depends(_verify_admin_token)):
+    try:
+        source = await insert_source(req.name, req.rss_url)
+        return source
+    except Exception as e:
+        if "unique" in str(e).lower():
+            raise HTTPException(status_code=400, detail="This RSS URL already exists")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/admin/sources/{source_id}")
+async def admin_delete_source(source_id: int, user: str = Depends(_verify_admin_token)):
+    deleted = await delete_source(source_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Source not found")
+    return {"deleted": True}
+
+
+@app.put("/api/admin/sources/{source_id}/toggle")
+async def admin_toggle_source(source_id: int, user: str = Depends(_verify_admin_token)):
+    # Fetch current state and toggle
+    sources = await get_all_sources()
+    current = next((s for s in sources if s["id"] == source_id), None)
+    if not current:
+        raise HTTPException(status_code=404, detail="Source not found")
+    updated = await toggle_source(source_id, not current["enabled"])
+    return updated
+
+
+@app.post("/api/admin/sources/trigger")
+async def admin_trigger_scrape(user: str = Depends(_verify_admin_token)):
+    """Manually trigger one scrape cycle."""
+    asyncio.create_task(_run_scrape_cycle())
+    return {"status": "Scrape cycle started"}
 

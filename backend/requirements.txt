@@ -9,3 +9,5 @@ python-dotenv>=1.0.0
 youtube-transcript-api>=0.6.0
 pyjwt>=2.8.0
 bcrypt>=4.1.0
+feedparser>=6.0.0
+beautifulsoup4>=4.12.0
