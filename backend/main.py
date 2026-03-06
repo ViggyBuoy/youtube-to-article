@@ -13,9 +13,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import httpx
+import yt_dlp
 from google import genai
 from google.genai import types
-from pytubefix import YouTube
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -111,23 +111,29 @@ LANGUAGE_INSTRUCTIONS = {
 def download_audio(url: str) -> tuple[str, dict]:
     """Download audio to a temp file and return (filepath, metadata)."""
     try:
-        yt = YouTube(url)
-        stream = yt.streams.filter(only_audio=True).order_by("abr").desc().first()
-        if not stream:
-            raise HTTPException(status_code=400, detail="No audio stream available")
-
         tmp_dir = tempfile.mkdtemp()
-        filepath = stream.download(output_path=tmp_dir, filename="audio")
+        outtmpl = os.path.join(tmp_dir, "audio.%(ext)s")
+
+        ydl_opts = {
+            "format": "bestaudio/best",
+            "outtmpl": outtmpl,
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filepath = ydl.prepare_filename(info)
 
         metadata = {
-            "title": yt.title,
-            "channel": yt.author,
-            "duration": yt.length,
-            "thumbnail": yt.thumbnail_url,
+            "title": info.get("title", ""),
+            "channel": info.get("uploader", info.get("channel", "")),
+            "duration": info.get("duration", 0),
+            "thumbnail": info.get("thumbnail", ""),
         }
+        print(f"[download] Audio saved: {filepath} | Duration: {metadata['duration']}s")
         return filepath, metadata
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to download audio: {e}")
 
