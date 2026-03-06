@@ -152,7 +152,8 @@ def download_audio(url: str) -> tuple[str, dict]:
             print(f"[download] Trying player_client={client_name} for: {url}")
 
             opts = {
-                "format": "bestaudio/best",
+                "format": "ba/bestaudio/best",
+                "extract_audio": True,
                 "outtmpl": output_path,
                 "noplaylist": True,
                 "extractor_args": {"youtube": {"player_client": player_client}},
