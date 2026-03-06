@@ -258,13 +258,12 @@ def _download_via_cobalt(url: str, tmp_dir: str) -> str:
 
 
 def download_audio(url: str) -> tuple[str, dict]:
-    """Download audio — tries Cobalt (if configured), then yt-dlp.
-
-    This is the fallback path, only called when YouTube captions are unavailable.
-    """
+    """Download audio — tries Cobalt (if configured), then yt-dlp as fallback."""
     tmp_dir = tempfile.mkdtemp()
     video_id = _get_video_id(url)
     metadata = _fetch_metadata(url, video_id)
+
+    cobalt_error = None
 
     # ── Try Cobalt (only if self-hosted instance is configured) ──
     if COBALT_API_URL:
@@ -273,6 +272,7 @@ def download_audio(url: str) -> tuple[str, dict]:
             metadata["duration"] = _get_audio_duration(filepath)
             return filepath, metadata
         except Exception as e:
+            cobalt_error = str(e)
             print(f"[download] Cobalt failed: {e}")
             for fname in os.listdir(tmp_dir):
                 try:
@@ -332,9 +332,14 @@ def download_audio(url: str) -> tuple[str, dict]:
                     pass
             continue
 
+    errors = []
+    if cobalt_error:
+        errors.append(f"Cobalt: {cobalt_error}")
+    if last_error:
+        errors.append(f"yt-dlp: {last_error}")
     raise HTTPException(
         status_code=400,
-        detail=f"Failed to download audio: {last_error}",
+        detail=f"Failed to download audio — {' | '.join(errors)}",
     )
 
 
@@ -612,44 +617,24 @@ async def convert(req: ConvertRequest):
     url = req.url.strip()
     if not YOUTUBE_URL_PATTERN.match(url):
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+    if not ASSEMBLYAI_KEY:
+        raise HTTPException(status_code=500, detail="ASSEMBLYAI_API_KEY not set")
     if not GEMINI_KEY:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not set")
 
-    video_id = _get_video_id(url)
+    # Download audio via Cobalt API
+    filepath, metadata = download_audio(url)
 
-    # ── Strategy 1: YouTube's built-in captions (fastest, no download needed) ──
-    transcript = get_youtube_transcript(video_id) if video_id else None
+    # Start thumbnail generation in parallel
+    executor = ThreadPoolExecutor(max_workers=1)
+    thumbnail_future = executor.submit(generate_thumbnail, metadata["thumbnail"])
 
-    if transcript:
-        print(f"[convert] Using YouTube captions ({len(transcript)} chars)")
-        metadata = _fetch_metadata(url, video_id)
-
-        # Start thumbnail generation in parallel
-        executor = ThreadPoolExecutor(max_workers=1)
-        thumbnail_future = executor.submit(generate_thumbnail, metadata["thumbnail"])
-
+    try:
+        transcript = await transcribe_audio(filepath)
         article_data = generate_article(transcript, metadata["title"], metadata["channel"], req.language)
-    else:
-        # ── Strategy 2: Download audio + transcribe with AssemblyAI ──
-        print(f"[convert] No YouTube captions, downloading audio...")
-        if not ASSEMBLYAI_KEY:
-            raise HTTPException(
-                status_code=500,
-                detail="YouTube captions not available and ASSEMBLYAI_API_KEY not set",
-            )
-
-        filepath, metadata = download_audio(url)
-
-        # Start thumbnail generation in parallel
-        executor = ThreadPoolExecutor(max_workers=1)
-        thumbnail_future = executor.submit(generate_thumbnail, metadata["thumbnail"])
-
-        try:
-            transcript = await transcribe_audio(filepath)
-            article_data = generate_article(transcript, metadata["title"], metadata["channel"], req.language)
-        finally:
-            if os.path.exists(filepath):
-                os.remove(filepath)
+    finally:
+        if os.path.exists(filepath):
+            os.remove(filepath)
 
     ai_thumbnail = thumbnail_future.result(timeout=60)
     executor.shutdown(wait=False)
