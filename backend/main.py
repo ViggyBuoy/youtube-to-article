@@ -131,7 +131,7 @@ def _get_cookies_file():
 # ── Audio download: Cobalt (self-hosted, optional) + yt-dlp fallback ──────────
 
 # Cobalt API for audio download (fallback when YouTube captions unavailable)
-COBALT_API_URL = os.environ.get("COBALT_API_URL", "https://cookie.br0k3.me/")
+COBALT_API_URL = os.environ.get("COBALT_API_URL", "https://api.qwkuns.me/")
 
 # yt-dlp player clients for fallback
 _PLAYER_CLIENTS = [["default"], ["mediaconnect"], ["tv_embedded"], ["web"]]
