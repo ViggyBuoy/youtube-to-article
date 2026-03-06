@@ -13,7 +13,6 @@ def _row_to_dict(row: asyncpg.Record) -> dict:
     """Convert asyncpg Record to dict, serializing datetimes to strings."""
     d = dict(row)
     if "created_at" in d and d["created_at"] is not None:
-        # Format to match old SQLite string format so frontend's "+ Z" logic works
         d["created_at"] = d["created_at"].strftime("%Y-%m-%d %H:%M:%S")
     return d
 
@@ -66,11 +65,13 @@ async def init_db():
             )
         """)
 
-        # Add channel_slug column if it doesn't exist (idempotent migration)
-        await conn.execute("""
-            ALTER TABLE articles
-            ADD COLUMN IF NOT EXISTS channel_slug TEXT NOT NULL DEFAULT ''
-        """)
+        # Idempotent migrations
+        await conn.execute(
+            "ALTER TABLE articles ADD COLUMN IF NOT EXISTS channel_slug TEXT NOT NULL DEFAULT ''"
+        )
+        await conn.execute(
+            "ALTER TABLE articles ADD COLUMN IF NOT EXISTS channel_avatar TEXT NOT NULL DEFAULT ''"
+        )
 
         # Backfill channel_slug for existing rows
         rows = await conn.fetch(
@@ -103,6 +104,7 @@ async def insert_article(
     meta_description: str,
     channel: str,
     channel_slug: str,
+    channel_avatar: str,
     thumbnail: str,
     duration: int,
     youtube_url: str,
@@ -113,11 +115,11 @@ async def insert_article(
     async with _pool.acquire() as conn:
         await conn.execute(
             """INSERT INTO articles
-               (slug, title, meta_description, channel, channel_slug, thumbnail,
-                duration, youtube_url, language, transcript, article)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)""",
-            slug, title, meta_description, channel, channel_slug, thumbnail,
-            duration, youtube_url, language, transcript, article,
+               (slug, title, meta_description, channel, channel_slug, channel_avatar,
+                thumbnail, duration, youtube_url, language, transcript, article)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
+            slug, title, meta_description, channel, channel_slug, channel_avatar,
+            thumbnail, duration, youtube_url, language, transcript, article,
         )
     return await get_article_by_slug(slug)
 
@@ -126,7 +128,7 @@ async def get_all_articles() -> list[dict]:
     async with _pool.acquire() as conn:
         rows = await conn.fetch(
             "SELECT id, slug, title, meta_description, channel, channel_slug, "
-            "thumbnail, duration, language, created_at "
+            "channel_avatar, thumbnail, duration, language, created_at "
             "FROM articles ORDER BY created_at DESC"
         )
         return [_row_to_dict(row) for row in rows]
@@ -141,16 +143,19 @@ async def get_article_by_slug(slug: str):
 
 
 async def get_all_channels() -> list[dict]:
-    """Get all unique channels with article counts."""
+    """Get all unique channels with article counts and avatar."""
     async with _pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT channel, channel_slug, COUNT(*) as article_count
+            SELECT channel, channel_slug,
+                   MAX(channel_avatar) as channel_avatar,
+                   COUNT(*) as article_count,
+                   MIN(created_at) as first_article
             FROM articles
             WHERE channel_slug != ''
             GROUP BY channel, channel_slug
             ORDER BY article_count DESC
         """)
-        return [dict(row) for row in rows]
+        return [_row_to_dict(row) for row in rows]
 
 
 async def get_articles_by_channel_slug(channel_slug: str) -> dict | None:
@@ -158,7 +163,7 @@ async def get_articles_by_channel_slug(channel_slug: str) -> dict | None:
     async with _pool.acquire() as conn:
         rows = await conn.fetch(
             """SELECT id, slug, title, meta_description, channel, channel_slug,
-                      thumbnail, duration, language, created_at
+                      channel_avatar, thumbnail, duration, language, created_at
                FROM articles WHERE channel_slug = $1
                ORDER BY created_at DESC""",
             channel_slug,
@@ -169,6 +174,32 @@ async def get_articles_by_channel_slug(channel_slug: str) -> dict | None:
         return {
             "channel": articles[0]["channel"],
             "channel_slug": channel_slug,
+            "channel_avatar": articles[0].get("channel_avatar", ""),
             "article_count": len(articles),
             "articles": articles,
         }
+
+
+# ── Admin CRUD ────────────────────────────────────────────────────────────────
+
+async def update_article(slug: str, title: str, meta_description: str, article: str) -> dict | None:
+    """Update an article's editable fields."""
+    async with _pool.acquire() as conn:
+        result = await conn.execute(
+            """UPDATE articles
+               SET title = $1, meta_description = $2, article = $3
+               WHERE slug = $4""",
+            title, meta_description, article, slug,
+        )
+        if result == "UPDATE 0":
+            return None
+    return await get_article_by_slug(slug)
+
+
+async def delete_article(slug: str) -> bool:
+    """Delete an article by slug."""
+    async with _pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM articles WHERE slug = $1", slug
+        )
+        return result != "DELETE 0"

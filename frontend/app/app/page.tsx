@@ -10,6 +10,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 interface Metadata {
   title: string;
   channel: string;
+  channel_avatar: string;
   thumbnail: string;
   duration: number;
 }
@@ -85,6 +86,7 @@ export default function ConverterPage() {
           title: result.title,
           meta_description: result.meta_description,
           channel: result.metadata.channel,
+          channel_avatar: result.metadata.channel_avatar || "",
           thumbnail: result.metadata.thumbnail,
           duration: result.metadata.duration,
           youtube_url: currentUrl,

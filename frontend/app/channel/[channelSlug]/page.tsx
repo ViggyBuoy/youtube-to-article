@@ -12,8 +12,10 @@ interface Article {
   id: number;
   slug: string;
   title: string;
+  meta_description?: string;
   channel: string;
   channel_slug: string;
+  channel_avatar?: string;
   thumbnail: string;
   duration: number;
   language: string;
@@ -23,6 +25,7 @@ interface Article {
 interface ChannelData {
   channel: string;
   channel_slug: string;
+  channel_avatar: string;
   article_count: number;
   articles: Article[];
 }
@@ -77,48 +80,92 @@ export default async function ChannelProfilePage({ params }: PageProps) {
         &larr; All Articles
       </Link>
 
-      <div className="ch-profile">
-        {/* Channel header */}
-        <div className="ch-header">
-          <div className="ch-avatar">
-            {data.channel.charAt(0).toUpperCase()}
+      <div className="au-page">
+        {/* ─── Author header ─── */}
+        <div className="au-header">
+          <div className="au-avatar-wrap">
+            {data.channel_avatar ? (
+              <img
+                src={data.channel_avatar}
+                alt={data.channel}
+                className="au-avatar-img"
+              />
+            ) : (
+              <div className="au-avatar-fallback">
+                {data.channel.charAt(0).toUpperCase()}
+              </div>
+            )}
           </div>
-          <div>
-            <h1 className="ch-name">{data.channel}</h1>
-            <p className="ch-meta">
-              {data.article_count} article
-              {data.article_count !== 1 ? "s" : ""} published
+          <div className="au-info">
+            <h1 className="au-name">{data.channel}</h1>
+            <p className="au-role">YouTube Creator</p>
+            <p className="au-bio">
+              {data.channel} publishes crypto insights and market analysis on
+              YouTube. Browse all {data.article_count} article
+              {data.article_count !== 1 ? "s" : ""} converted from their channel.
             </p>
+            <div className="au-stats-row">
+              <div className="au-stat">
+                <span className="au-stat-num">{data.article_count}</span>
+                <span className="au-stat-label">Articles</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Articles grid */}
-        <div className="ch-grid">
+        {/* ─── Section header ─── */}
+        <div className="au-section-head">
+          <h2>Articles by {data.channel}</h2>
+          <span className="au-article-count">
+            {data.article_count} article{data.article_count !== 1 ? "s" : ""}
+          </span>
+        </div>
+
+        {/* ─── Articles list ─── */}
+        <div className="au-articles">
           {data.articles.map((a) => {
             const li = LANG_BADGE[a.language] || {
               cls: "",
               label: a.language,
             };
+            const date = new Date(a.created_at + "Z");
+            const formattedDate = date.toLocaleDateString("en-US", {
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            });
+            const readingTime = a.meta_description
+              ? Math.max(1, Math.round(a.meta_description.length / 30))
+              : 3;
+
             return (
               <Link
                 key={a.slug}
                 href={`/articles/${a.slug}`}
-                className="cd-grid-card"
+                className="au-article-card"
               >
-                <div className="cd-grid-img">
+                <div className="au-article-img">
                   <img src={a.thumbnail} alt={a.title} />
                 </div>
-                <div className="ch-card-badges">
-                  <span className={`cd-lang-pill ${li.cls}`}>{li.label}</span>
+                <div className="au-article-body">
+                  <div className="au-article-meta-top">
+                    <span className={`cd-lang-pill ${li.cls}`}>
+                      {li.label}
+                    </span>
+                    <span className="au-article-date">{formattedDate}</span>
+                  </div>
+                  <h3 className="au-article-title">{a.title}</h3>
+                  {a.meta_description && (
+                    <p className="au-article-desc">{a.meta_description}</p>
+                  )}
+                  <div className="au-article-foot">
+                    <span className="au-article-duration">
+                      {Math.floor(a.duration / 60)}:
+                      {String(a.duration % 60).padStart(2, "0")} video
+                    </span>
+                    <span className="au-article-read">Read article &rarr;</span>
+                  </div>
                 </div>
-                <h4 className="cd-grid-title">{a.title}</h4>
-                <p className="cd-grid-meta">
-                  {new Date(a.created_at + "Z").toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
-                </p>
               </Link>
             );
           })}

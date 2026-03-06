@@ -7,6 +7,7 @@ import time
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from dotenv import load_dotenv
@@ -20,13 +21,16 @@ from youtube_transcript_api import YouTubeTranscriptApi
 print(f"[init] yt-dlp version: {yt_dlp.version.__version__}")
 from google import genai
 from google.genai import types
-from fastapi import FastAPI, HTTPException
+import bcrypt
+import jwt
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from database import (
     init_db, close_db, insert_article, get_all_articles, get_article_by_slug,
     get_all_channels, get_articles_by_channel_slug, generate_channel_slug,
+    update_article, delete_article,
 )
 
 
@@ -67,6 +71,32 @@ YOUTUBE_URL_PATTERN = re.compile(
     r"^(https?://)?(www\.)?(youtube\.com/watch\?v=|youtu\.be/)[\w-]{11}"
 )
 
+# ── Admin auth config ─────────────────────────────────────────────────────────
+
+ADMIN_USER = os.environ.get("ADMIN_USER", "DevashishBhuyan")
+ADMIN_PASSWORD_HASH = os.environ.get(
+    "ADMIN_PASSWORD_HASH",
+    bcrypt.hashpw(b"Devashishone23@", bcrypt.gensalt()).decode(),
+)
+JWT_SECRET = os.environ.get("JWT_SECRET", os.urandom(32).hex())
+JWT_EXPIRY_HOURS = 24
+
+_login_attempts: dict[str, list[float]] = {}  # IP -> timestamps for rate limiting
+
+
+def _verify_admin_token(authorization: str = Header(None)) -> str:
+    """FastAPI dependency to verify JWT token on admin endpoints."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid token")
+    token = authorization.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return payload["sub"]
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
 
 # ── Request models ────────────────────────────────────────────────────────────
 
@@ -79,11 +109,23 @@ class PublishRequest(BaseModel):
     title: str
     meta_description: str = ""
     channel: str
+    channel_avatar: str = ""
     thumbnail: str
     duration: int
     youtube_url: str
     language: Literal["english", "hindi", "hinglish"]
     transcript: str
+    article: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class UpdateArticleRequest(BaseModel):
+    title: str
+    meta_description: str = ""
     article: str
 
 
@@ -153,9 +195,28 @@ def _get_audio_duration(filepath: str) -> int:
         return 0
 
 
+def _fetch_channel_avatar(author_url: str) -> str:
+    """Fetch channel profile picture from YouTube channel page og:image."""
+    if not author_url:
+        return ""
+    try:
+        with httpx.Client(timeout=10, follow_redirects=True) as client:
+            resp = client.get(author_url)
+            resp.raise_for_status()
+            # Extract og:image from HTML
+            match = re.search(r'<meta\s+property="og:image"\s+content="([^"]+)"', resp.text)
+            if match:
+                avatar = match.group(1)
+                print(f"[metadata] Channel avatar: {avatar[:80]}")
+                return avatar
+    except Exception as e:
+        print(f"[metadata] Channel avatar fetch failed: {e}")
+    return ""
+
+
 def _fetch_metadata(url: str, video_id: str) -> dict:
     """Get video metadata from YouTube oEmbed API (public, no auth)."""
-    metadata = {"title": "", "channel": "", "duration": 0, "thumbnail": ""}
+    metadata = {"title": "", "channel": "", "duration": 0, "thumbnail": "", "channel_avatar": ""}
     try:
         with httpx.Client(timeout=15) as client:
             resp = client.get(f"https://www.youtube.com/oembed?url={url}&format=json")
@@ -165,17 +226,22 @@ def _fetch_metadata(url: str, video_id: str) -> dict:
         metadata["channel"] = data.get("author_name", "")
         metadata["thumbnail"] = data.get("thumbnail_url", "")
 
+        # Fetch channel profile picture from author_url
+        author_url = data.get("author_url", "")
+        metadata["channel_avatar"] = _fetch_channel_avatar(author_url)
+
         # Try higher-res thumbnails (not all videos have them)
         if video_id:
-            for suffix in ("maxresdefault.jpg", "hq720.jpg", "sddefault.jpg"):
-                hi_res = f"https://i.ytimg.com/vi/{video_id}/{suffix}"
-                try:
-                    check = client.head(hi_res, timeout=5)
-                    if check.status_code == 200:
-                        metadata["thumbnail"] = hi_res
-                        break
-                except Exception:
-                    continue
+            with httpx.Client(timeout=10) as client:
+                for suffix in ("maxresdefault.jpg", "hq720.jpg", "sddefault.jpg"):
+                    hi_res = f"https://i.ytimg.com/vi/{video_id}/{suffix}"
+                    try:
+                        check = client.head(hi_res, timeout=5)
+                        if check.status_code == 200:
+                            metadata["thumbnail"] = hi_res
+                            break
+                    except Exception:
+                        continue
 
         print(f"[metadata] oEmbed OK: {metadata['title'][:60]} | thumb: {metadata['thumbnail']}")
     except Exception as e:
@@ -670,6 +736,7 @@ async def publish(req: PublishRequest):
         meta_description=req.meta_description,
         channel=req.channel,
         channel_slug=channel_slug,
+        channel_avatar=req.channel_avatar,
         thumbnail=req.thumbnail,
         duration=req.duration,
         youtube_url=req.youtube_url,
@@ -706,4 +773,63 @@ async def get_author(channel_slug: str):
     if not result:
         raise HTTPException(status_code=404, detail="Author not found")
     return result
+
+
+# ── Admin Endpoints ──────────────────────────────────────────────────────────
+
+@app.post("/api/admin/login")
+async def admin_login(req: LoginRequest):
+    # Rate limiting: max 5 attempts per 15 minutes per username
+    now = time.time()
+    key = req.username.lower()
+    attempts = _login_attempts.get(key, [])
+    attempts = [t for t in attempts if now - t < 900]  # Keep last 15 min
+    _login_attempts[key] = attempts
+
+    if len(attempts) >= 5:
+        raise HTTPException(status_code=429, detail="Too many login attempts. Try again later.")
+
+    _login_attempts[key].append(now)
+
+    if req.username != ADMIN_USER or not bcrypt.checkpw(
+        req.password.encode(), ADMIN_PASSWORD_HASH.encode()
+    ):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    # Clear attempts on success
+    _login_attempts.pop(key, None)
+
+    token = jwt.encode(
+        {
+            "sub": req.username,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRY_HOURS),
+        },
+        JWT_SECRET,
+        algorithm="HS256",
+    )
+    return {"token": token, "username": req.username}
+
+
+@app.get("/api/admin/articles")
+async def admin_list_articles(user: str = Depends(_verify_admin_token)):
+    articles = await get_all_articles()
+    return {"articles": articles}
+
+
+@app.put("/api/admin/articles/{slug}")
+async def admin_update_article(
+    slug: str, req: UpdateArticleRequest, user: str = Depends(_verify_admin_token)
+):
+    updated = await update_article(slug, req.title, req.meta_description, req.article)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Article not found")
+    return updated
+
+
+@app.delete("/api/admin/articles/{slug}")
+async def admin_delete_article(slug: str, user: str = Depends(_verify_admin_token)):
+    deleted = await delete_article(slug)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Article not found")
+    return {"deleted": True}
 
