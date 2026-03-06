@@ -160,11 +160,21 @@ def _fetch_metadata(url: str, video_id: str) -> dict:
             data = resp.json()
         metadata["title"] = data.get("title", "")
         metadata["channel"] = data.get("author_name", "")
-        metadata["thumbnail"] = (
-            f"https://i.ytimg.com/vi/{video_id}/hq720.jpg" if video_id
-            else data.get("thumbnail_url", "")
-        )
-        print(f"[metadata] oEmbed OK: {metadata['title'][:60]}")
+        metadata["thumbnail"] = data.get("thumbnail_url", "")
+
+        # Try higher-res thumbnails (not all videos have them)
+        if video_id:
+            for suffix in ("maxresdefault.jpg", "hq720.jpg", "sddefault.jpg"):
+                hi_res = f"https://i.ytimg.com/vi/{video_id}/{suffix}"
+                try:
+                    check = client.head(hi_res, timeout=5)
+                    if check.status_code == 200:
+                        metadata["thumbnail"] = hi_res
+                        break
+                except Exception:
+                    continue
+
+        print(f"[metadata] oEmbed OK: {metadata['title'][:60]} | thumb: {metadata['thumbnail']}")
     except Exception as e:
         print(f"[metadata] oEmbed failed: {e}")
         if video_id:
