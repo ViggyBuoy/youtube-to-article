@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import subprocess
 import time
 import uuid
 import tempfile
@@ -126,22 +127,114 @@ def _get_cookies_file():
     return path
 
 
-# Player clients to try — different clients bypass different bot detection methods
-_PLAYER_CLIENTS = [
-    ["default"],
-    ["mediaconnect"],
-    ["tv_embedded"],
-    ["web"],
+# ── Cobalt API (primary) + yt-dlp (fallback) ─────────────────────────────────
+
+COBALT_ENDPOINTS = [
+    # v7 API format (latest)
+    ("https://api.cobalt.tools/", {"downloadMode": "audio", "audioFormat": "mp3"}),
+    # v6 API format
+    ("https://api.cobalt.tools/api/json", {"isAudioOnly": True, "aFormat": "mp3"}),
 ]
+
+# yt-dlp player clients for fallback
+_PLAYER_CLIENTS = [["default"], ["mediaconnect"], ["tv_embedded"], ["web"]]
+
+
+def _get_video_id(url: str) -> str:
+    """Extract YouTube video ID from URL."""
+    match = re.search(r'(?:v=|youtu\.be/)([\w-]{11})', url)
+    return match.group(1) if match else ""
+
+
+def _get_audio_duration(filepath: str) -> int:
+    """Get audio duration in seconds using ffprobe."""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", filepath],
+            capture_output=True, text=True, timeout=10,
+        )
+        return int(float(result.stdout.strip()))
+    except Exception:
+        return 0
+
+
+def _fetch_metadata(url: str, video_id: str) -> dict:
+    """Get video metadata from YouTube oEmbed API (public, no auth)."""
+    metadata = {"title": "", "channel": "", "duration": 0, "thumbnail": ""}
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(f"https://www.youtube.com/oembed?url={url}&format=json")
+            resp.raise_for_status()
+            data = resp.json()
+        metadata["title"] = data.get("title", "")
+        metadata["channel"] = data.get("author_name", "")
+        metadata["thumbnail"] = (
+            f"https://i.ytimg.com/vi/{video_id}/hq720.jpg" if video_id
+            else data.get("thumbnail_url", "")
+        )
+        print(f"[metadata] oEmbed OK: {metadata['title'][:60]}")
+    except Exception as e:
+        print(f"[metadata] oEmbed failed: {e}")
+        if video_id:
+            metadata["thumbnail"] = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+    return metadata
 
 
 def download_audio(url: str) -> tuple[str, dict]:
-    """Download audio from YouTube using yt-dlp with multiple fallback strategies.
-
-    Lets yt-dlp handle the actual download (it manages YouTube's auth headers,
-    DASH fragment assembly, retries, and cookie forwarding).
-    """
+    """Download audio using Cobalt API (primary), with yt-dlp fallback."""
     tmp_dir = tempfile.mkdtemp()
+    video_id = _get_video_id(url)
+
+    # Get metadata from YouTube oEmbed (public, works everywhere)
+    metadata = _fetch_metadata(url, video_id)
+
+    # ── Primary: Cobalt API ──
+    for api_url, extra_params in COBALT_ENDPOINTS:
+        try:
+            print(f"[download] Cobalt: {api_url}")
+            body = {"url": url, **extra_params}
+            with httpx.Client(timeout=30) as client:
+                resp = client.post(
+                    api_url, json=body,
+                    headers={"Accept": "application/json", "Content-Type": "application/json"},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            status = data.get("status")
+            audio_url = data.get("url")
+            print(f"[download] Cobalt status={status}")
+
+            if status in ("stream", "redirect", "tunnel") and audio_url:
+                filepath = os.path.join(tmp_dir, "audio.mp3")
+                with httpx.Client(timeout=180, follow_redirects=True) as client:
+                    audio_resp = client.get(audio_url)
+                    audio_resp.raise_for_status()
+                    with open(filepath, "wb") as f:
+                        f.write(audio_resp.content)
+
+                size = os.path.getsize(filepath)
+                if size > 0:
+                    metadata["duration"] = _get_audio_duration(filepath)
+                    print(f"[download] Cobalt OK: {size} bytes, {metadata['duration']}s")
+                    return filepath, metadata
+                raise Exception("Downloaded file is empty")
+            elif status == "error":
+                raise Exception(f"Cobalt error: {data.get('text', data)}")
+            else:
+                raise Exception(f"Unexpected status: {status}")
+        except Exception as e:
+            print(f"[download] Cobalt ({api_url}) failed: {e}")
+            for fname in os.listdir(tmp_dir):
+                try:
+                    os.remove(os.path.join(tmp_dir, fname))
+                except OSError:
+                    pass
+            continue
+
+    # ── Fallback: yt-dlp ──
+    print(f"[download] Cobalt failed, falling back to yt-dlp...")
     cookies_file = _get_cookies_file()
     output_path = os.path.join(tmp_dir, "audio.%(ext)s")
 
@@ -149,8 +242,7 @@ def download_audio(url: str) -> tuple[str, dict]:
     for player_client in _PLAYER_CLIENTS:
         client_name = ",".join(player_client)
         try:
-            print(f"[download] Trying player_client={client_name} for: {url}")
-
+            print(f"[download] yt-dlp client={client_name}")
             opts = {
                 "format": "ba/bestaudio/best",
                 "extract_audio": True,
@@ -167,27 +259,25 @@ def download_audio(url: str) -> tuple[str, dict]:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=True)
 
-            metadata = {
-                "title": info.get("title", ""),
-                "channel": info.get("uploader", info.get("channel", "")),
-                "duration": info.get("duration", 0),
-                "thumbnail": info.get("thumbnail", ""),
-            }
+            if not metadata["title"]:
+                metadata["title"] = info.get("title", "")
+            if not metadata["channel"]:
+                metadata["channel"] = info.get("uploader", info.get("channel", ""))
+            if not metadata["duration"]:
+                metadata["duration"] = info.get("duration", 0)
+            if not metadata["thumbnail"]:
+                metadata["thumbnail"] = info.get("thumbnail", "")
 
-            # Find the downloaded file
             for fname in os.listdir(tmp_dir):
                 fpath = os.path.join(tmp_dir, fname)
                 if os.path.isfile(fpath) and os.path.getsize(fpath) > 0:
-                    size = os.path.getsize(fpath)
-                    print(f"[download] OK: {fname} ({size} bytes) | {metadata['duration']}s")
+                    print(f"[download] yt-dlp OK: {fname} ({os.path.getsize(fpath)} bytes)")
                     return fpath, metadata
 
-            raise Exception("Download reported success but no audio file found")
-
+            raise Exception("No file after yt-dlp download")
         except Exception as e:
-            print(f"[download] client={client_name} failed: {e}")
+            print(f"[download] yt-dlp client={client_name} failed: {e}")
             last_error = e
-            # Clean up partial files for next attempt
             for fname in os.listdir(tmp_dir):
                 try:
                     os.remove(os.path.join(tmp_dir, fname))
@@ -195,7 +285,10 @@ def download_audio(url: str) -> tuple[str, dict]:
                     pass
             continue
 
-    raise HTTPException(status_code=400, detail=f"Failed to download audio: {last_error}")
+    raise HTTPException(
+        status_code=400,
+        detail=f"Failed to download audio (Cobalt + yt-dlp both failed): {last_error}",
+    )
 
 
 # ── Step 2: Transcribe with AssemblyAI ────────────────────────────────────────
