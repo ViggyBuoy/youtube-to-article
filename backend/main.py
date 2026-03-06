@@ -24,7 +24,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from database import init_db, close_db, insert_article, get_all_articles, get_article_by_slug
+from database import (
+    init_db, close_db, insert_article, get_all_articles, get_article_by_slug,
+    get_all_channels, get_articles_by_channel_slug, generate_channel_slug,
+)
 
 
 # ── App setup ─────────────────────────────────────────────────────────────────
@@ -659,11 +662,14 @@ async def publish(req: PublishRequest):
     if existing:
         slug = f"{slug}-{int(time.time())}"
 
+    channel_slug = generate_channel_slug(req.channel)
+
     article_record = await insert_article(
         slug=slug,
         title=req.title,
         meta_description=req.meta_description,
         channel=req.channel,
+        channel_slug=channel_slug,
         thumbnail=req.thumbnail,
         duration=req.duration,
         youtube_url=req.youtube_url,
@@ -686,4 +692,18 @@ async def get_article(slug: str):
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
     return article
+
+
+@app.get("/api/authors")
+async def list_authors():
+    channels = await get_all_channels()
+    return {"authors": channels}
+
+
+@app.get("/api/authors/{channel_slug}")
+async def get_author(channel_slug: str):
+    result = await get_articles_by_channel_slug(channel_slug)
+    if not result:
+        raise HTTPException(status_code=404, detail="Author not found")
+    return result
 

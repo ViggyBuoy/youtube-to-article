@@ -1,171 +1,297 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import UrlForm from "../components/UrlForm";
-import ArticleView from "../components/ArticleView";
+import { useState, useEffect } from "react";
+import Link from "next/link";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-interface Metadata {
-  title: string;
-  channel: string;
-  thumbnail: string;
-  duration: number;
-}
+const LANG_BADGE: Record<string, { cls: string; label: string }> = {
+  english: { cls: "lang-badge-en", label: "English" },
+  hindi: { cls: "lang-badge-hi", label: "Hindi" },
+  hinglish: { cls: "lang-badge-hing", label: "Hinglish" },
+};
 
-interface ConvertResult {
-  metadata: Metadata;
-  transcript: string;
-  title: string;
-  meta_description: string;
-  article: string;
-  language: string;
-}
-
-const STEPS = [
-  "Downloading audio...",
-  "Transcribing with AssemblyAI...",
-  "Generating SEO article...",
-  "Creating AI thumbnail...",
+const FILTERS = [
+  { key: "all", label: "All" },
+  { key: "english", label: "English Articles", icon: "🌐" },
+  { key: "hindi", label: "Hindi Articles", icon: "🇮🇳" },
+  { key: "hinglish", label: "Hinglish Articles", icon: "🔀" },
 ];
 
-export default function Home() {
-  const router = useRouter();
-  const [result, setResult] = useState<ConvertResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [publishing, setPublishing] = useState(false);
-  const [step, setStep] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [currentUrl, setCurrentUrl] = useState("");
+interface Article {
+  id: number;
+  slug: string;
+  title: string;
+  channel: string;
+  channel_slug: string;
+  thumbnail: string;
+  duration: number;
+  language: string;
+  created_at: string;
+}
 
-  async function handleSubmit(url: string, language: string) {
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    setStep(0);
-    setCurrentUrl(url);
+/* ── helpers ────────────────────────────────────────────── */
 
-    const stepTimer = setInterval(() => {
-      setStep((prev) => (prev < STEPS.length - 1 ? prev + 1 : prev));
-    }, 8000);
+function formatTime(dateStr: string): string {
+  const d = new Date(dateStr + "Z");
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  }
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
-    try {
-      const res = await fetch(`${API_BASE}/api/convert`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, language }),
-      });
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr + "Z").getTime();
+  const hrs = Math.floor(diff / 3.6e6);
+  if (hrs < 1) return "Just now";
+  if (hrs < 24) return `${hrs} hours ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return "1 day ago";
+  if (days < 7) return `${days} days ago`;
+  return new Date(dateStr + "Z").toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
 
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.detail || "Conversion failed");
-      }
+function langOf(a: Article) {
+  return LANG_BADGE[a.language] || { cls: "", label: a.language };
+}
 
-      const data: ConvertResult = await res.json();
-      setResult(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      clearInterval(stepTimer);
-      setLoading(false);
-    }
+/* ── page ───────────────────────────────────────────────── */
+
+export default function HomePage() {
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [filter, setFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/articles`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { articles: [] }))
+      .then((d) => setArticles(d.articles || []))
+      .catch(() => setArticles([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered =
+    filter === "all" ? articles : articles.filter((a) => a.language === filter);
+  const featured = filtered[0] || null;
+  const sideList = filtered.slice(1, 5);
+  const gridArticles = filtered.slice(5);
+
+  const langCounts = articles.reduce<Record<string, number>>((acc, a) => {
+    acc[a.language] = (acc[a.language] || 0) + 1;
+    return acc;
+  }, {});
+
+  /* loading */
+  if (loading) {
+    return (
+      <div className="cp-page">
+        <div className="cd-empty">
+          <p className="cd-empty-title">Loading articles&hellip;</p>
+        </div>
+      </div>
+    );
   }
 
-  async function handlePublish() {
-    if (!result) return;
-    setPublishing(true);
-    setError(null);
-
-    try {
-      const res = await fetch(`${API_BASE}/api/publish`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: result.title,
-          meta_description: result.meta_description,
-          channel: result.metadata.channel,
-          thumbnail: result.metadata.thumbnail,
-          duration: result.metadata.duration,
-          youtube_url: currentUrl,
-          language: result.language,
-          transcript: result.transcript,
-          article: result.article,
-        }),
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.detail || "Failed to publish");
-      }
-
-      const data = await res.json();
-      router.push(`/articles/${data.slug}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to publish");
-    } finally {
-      setPublishing(false);
-    }
+  /* empty */
+  if (articles.length === 0) {
+    return (
+      <div className="cp-page">
+        <div className="cd-empty">
+          <p className="cd-empty-title">No articles published yet</p>
+          <Link href="/app" className="cd-empty-cta">
+            Convert your first video &rarr;
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-8 p-6">
-      <div className="text-center mb-2">
-        <h1 className="text-4xl font-bold text-white tracking-tight">
-          YouTube to Article
-        </h1>
-        <p className="text-white/50 mt-2">
-          Turn any YouTube video into an SEO-optimized blog article
-        </p>
-      </div>
+    <div className="cp-page">
+      <div className="cd-layout">
+        {/* ─── LEFT SIDEBAR ─── */}
+        <aside className="cd-left">
+          <div className="cd-left-head">
+            <span className="cd-left-icon">&#9673;</span>
+            <h3>Latest Articles</h3>
+          </div>
 
-      <UrlForm onSubmit={handleSubmit} loading={loading} />
+          <div className="cd-left-date">Today</div>
 
-      {/* Progress indicator */}
-      {loading && (
-        <div className="w-full max-w-md">
-          <div className="flex flex-col gap-3">
-            {STEPS.map((label, i) => (
-              <div key={label} className="flex items-center gap-3">
-                {i < step ? (
-                  <svg className="w-5 h-5 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : i === step ? (
-                  <svg className="animate-spin h-5 w-5 text-red-500 flex-shrink-0" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                  </svg>
-                ) : (
-                  <div className="w-5 h-5 rounded-full border-2 border-white/20 flex-shrink-0" />
-                )}
-                <span className={`text-sm ${i <= step ? "text-white" : "text-white/30"}`}>
-                  {label}
+          {articles.slice(0, 8).map((a) => {
+            const li = langOf(a);
+            return (
+              <Link
+                key={a.slug}
+                href={`/articles/${a.slug}`}
+                className="cd-latest-item"
+              >
+                <span className="cd-latest-time">
+                  {formatTime(a.created_at)}
                 </span>
+                <div className="cd-latest-badges">
+                  <span className={`cd-lang-pill ${li.cls}`}>{li.label}</span>
+                </div>
+                <h4 className="cd-latest-title">{a.title}</h4>
+                <p className="cd-latest-channel">
+                  By{" "}
+                  <Link
+                    href={`/@${a.channel_slug}`}
+                    className="cd-author-link"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {a.channel}
+                  </Link>
+                </p>
+              </Link>
+            );
+          })}
+        </aside>
+
+        {/* ─── MAIN CONTENT ─── */}
+        <main className="cd-main">
+          {/* header + pills */}
+          <div className="cd-feat-head">
+            <h2>Featured Stories</h2>
+            <span className="cd-view-all">View all stories &rarr;</span>
+          </div>
+
+          <div className="cd-pills">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                className={`cd-pill${filter === f.key ? " cd-pill-on" : ""}`}
+                onClick={() => setFilter(f.key)}
+              >
+                {f.icon && <span className="cd-pill-icon">{f.icon}</span>}
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {/* hero + side list */}
+          {featured && (
+            <div className="cd-hero-row">
+              <Link
+                href={`/articles/${featured.slug}`}
+                className="cd-hero-card"
+              >
+                <div className="cd-hero-img">
+                  <img src={featured.thumbnail} alt={featured.title} />
+                </div>
+                <span className="cd-hero-cat">
+                  {langOf(featured).label}
+                </span>
+                <h3 className="cd-hero-title">{featured.title}</h3>
+                <span className="cd-hero-time">
+                  {timeAgo(featured.created_at)}
+                </span>
+              </Link>
+
+              {sideList.length > 0 && (
+                <div className="cd-side-list">
+                  {sideList.map((a) => (
+                    <Link
+                      key={a.slug}
+                      href={`/articles/${a.slug}`}
+                      className="cd-side-item"
+                    >
+                      <span className="cd-side-cat">
+                        {langOf(a).label}
+                      </span>
+                      <h4 className="cd-side-title">{a.title}</h4>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* article grid */}
+          {gridArticles.length > 0 && (
+            <div className="cd-grid">
+              {gridArticles.map((a) => (
+                <Link
+                  key={a.slug}
+                  href={`/articles/${a.slug}`}
+                  className="cd-grid-card"
+                >
+                  <div className="cd-grid-img">
+                    <img src={a.thumbnail} alt={a.title} />
+                  </div>
+                  <h4 className="cd-grid-title">{a.title}</h4>
+                  <p className="cd-grid-meta">
+                    <Link
+                      href={`/@${a.channel_slug}`}
+                      className="cd-author-link"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {a.channel}
+                    </Link>
+                  </p>
+                </Link>
+              ))}
+            </div>
+          )}
+        </main>
+
+        {/* ─── RIGHT SIDEBAR ─── */}
+        <aside className="cd-right">
+          {/* CTA card */}
+          <Link href="/app" className="cd-cta-card">
+            <div className="cd-cta-plus">+</div>
+            <h4>Convert New Video</h4>
+            <p>Turn any YouTube video into an SEO-optimized article</p>
+          </Link>
+
+          {/* Stats */}
+          <div className="cd-stats">
+            <h4 className="cd-stats-head">Article Stats</h4>
+            <div className="cd-stat-row">
+              <span>Total Articles</span>
+              <strong>{articles.length}</strong>
+            </div>
+            {Object.entries(langCounts).map(([lang, count]) => (
+              <div key={lang} className="cd-stat-row">
+                <span className={`cd-lang-pill ${LANG_BADGE[lang]?.cls || ""}`}>
+                  {LANG_BADGE[lang]?.label || lang}
+                </span>
+                <strong>{count}</strong>
               </div>
             ))}
           </div>
-        </div>
-      )}
 
-      {error && (
-        <div className="w-full max-w-2xl bg-red-500/10 border border-red-500/30 rounded-xl px-5 py-3 text-red-400 text-sm">
-          {error}
-        </div>
-      )}
+          {/* Latest highlight */}
+          {articles[0] && (
+            <div className="cd-highlight">
+              <h4 className="cd-stats-head">Latest Published</h4>
+              <Link
+                href={`/articles/${articles[0].slug}`}
+                className="cd-highlight-card"
+              >
+                <img src={articles[0].thumbnail} alt={articles[0].title} />
+                <h5>{articles[0].title}</h5>
+              </Link>
+            </div>
+          )}
+        </aside>
+      </div>
 
-      {result && (
-        <ArticleView
-          metadata={result.metadata}
-          transcript={result.transcript}
-          articleTitle={result.title}
-          metaDescription={result.meta_description}
-          article={result.article}
-          language={result.language}
-          onPublish={handlePublish}
-          publishing={publishing}
-        />
-      )}
-    </main>
+      {/* footer */}
+      <footer className="cd-footer">
+        <div className="cd-footer-brand">
+          Chain<span style={{ color: "var(--cp-accent)" }}>.</span>Pulse
+        </div>
+        <p className="cd-footer-sub">Powered by YouTube to Article</p>
+      </footer>
+    </div>
   );
 }

@@ -36,7 +36,7 @@ export default async function ArticlePage({ params }: PageProps) {
           <h1 style={{ fontFamily: "var(--cp-serif)", fontSize: "32px", fontWeight: 900 }}>
             Article not found
           </h1>
-          <Link href="/articles" className="back-btn" style={{ width: "auto", border: "none", marginTop: "16px" }}>
+          <Link href="/" className="back-btn" style={{ width: "auto", border: "none", marginTop: "16px" }}>
             Back to articles
           </Link>
         </main>
@@ -61,7 +61,7 @@ export default async function ArticlePage({ params }: PageProps) {
   return (
     <div className="cp-page">
       {/* Top nav bar */}
-      <Link href="/articles" className="back-btn">
+      <Link href="/" className="back-btn">
         &larr; All Articles
       </Link>
 
@@ -92,7 +92,7 @@ export default async function ArticlePage({ params }: PageProps) {
 
           {/* Byline */}
           <div className="ap-byline">
-            <span>By <strong>{article.channel}</strong></span>
+            <span>By <Link href={`/@${article.channel_slug || ""}`}><strong>{article.channel}</strong></Link></span>
           </div>
 
           {/* Date */}
@@ -135,7 +135,9 @@ export default async function ArticlePage({ params }: PageProps) {
             <div className="ap-details-title">Article Details</div>
             <div className="ap-detail-row">
               <span className="ap-detail-label">Channel</span>
-              <span className="ap-detail-value">{article.channel}</span>
+              <Link href={`/@${article.channel_slug || ""}`} className="ap-detail-value cd-author-link">
+                {article.channel}
+              </Link>
             </div>
             <div className="ap-detail-row">
               <span className="ap-detail-label">Language</span>
@@ -185,7 +187,7 @@ export default async function ArticlePage({ params }: PageProps) {
           </div>
 
           {/* More articles CTA */}
-          <Link href="/articles" className="cd-cta-card">
+          <Link href="/" className="cd-cta-card">
             <h4>Browse All Articles</h4>
             <p>Read more published stories</p>
           </Link>
