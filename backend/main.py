@@ -125,8 +125,8 @@ def _get_cookies_file():
     return path
 
 
-# YouTube audio itags: 140=m4a/AAC/128k, 251=webm/Opus/160k, 250=Opus/70k, 249=Opus/50k
-_YT_AUDIO_FORMAT = "140/251/250/249/139/bestaudio/best"
+# Preferred audio itags in order: 140=AAC/128k, 251=Opus/160k, 250=Opus/70k, 249=Opus/50k, 139=AAC/48k
+_PREFERRED_ITAGS = ["140", "251", "250", "249", "139"]
 
 # Player clients to try — mediaconnect and tv_embedded bypass bot detection on cloud servers
 _PLAYER_CLIENTS = [
@@ -139,8 +139,8 @@ _PLAYER_CLIENTS = [
 def download_audio(url: str) -> tuple[str, dict]:
     """Download audio from YouTube with multiple fallback strategies.
 
-    Cycles through different yt-dlp player clients to bypass bot detection,
-    then downloads the audio stream directly via httpx (no FFmpeg needed).
+    Key: uses process=False to skip yt-dlp's format selector entirely,
+    then manually picks the best audio stream and downloads via httpx.
     """
     tmp_dir = tempfile.mkdtemp()
     cookies_file = _get_cookies_file()
@@ -152,7 +152,6 @@ def download_audio(url: str) -> tuple[str, dict]:
             print(f"[download] Trying player_client={client_name} for: {url}")
 
             opts = {
-                "format": _YT_AUDIO_FORMAT,
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
@@ -161,8 +160,9 @@ def download_audio(url: str) -> tuple[str, dict]:
             if cookies_file:
                 opts["cookiefile"] = cookies_file
 
+            # process=False → skip format selection entirely, just get raw info + formats
             with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+                info = ydl.extract_info(url, download=False, process=False)
 
             metadata = {
                 "title": info.get("title", ""),
@@ -171,26 +171,40 @@ def download_audio(url: str) -> tuple[str, dict]:
                 "thumbnail": info.get("thumbnail", ""),
             }
 
-            # Get the direct stream URL from the selected format
-            fmt_url = info.get("url")
-            req_fmts = info.get("requested_formats")
-            if not fmt_url and req_fmts:
-                fmt_url = req_fmts[0].get("url")
-            if not fmt_url:
-                # Fallback: scan all formats for any audio URL
-                formats = info.get("formats", [])
-                audio_fmts = [f for f in formats if f.get("acodec", "none") != "none" and f.get("url")]
-                if audio_fmts:
-                    fmt_url = audio_fmts[-1]["url"]
-                    print(f"[download] Found audio URL from formats list ({len(audio_fmts)} audio formats)")
+            # Manually find the best audio format from the raw formats list
+            formats = info.get("formats", [])
+            audio_fmts = [
+                f for f in formats
+                if f.get("acodec", "none") != "none" and f.get("url")
+            ]
+            print(f"[download] client={client_name}: {len(formats)} total formats, {len(audio_fmts)} audio formats")
 
-            if not fmt_url:
-                print(f"[download] No audio URL found with client={client_name}")
+            if not audio_fmts:
+                print(f"[download] No audio formats found with client={client_name}")
+                for f in formats[:5]:
+                    print(f"  id={f.get('format_id')} vcodec={f.get('vcodec')} acodec={f.get('acodec')} url={'yes' if f.get('url') else 'no'}")
                 continue
 
-            ext = info.get("ext", "m4a")
+            # Pick best audio: prefer itags in order, then highest bitrate
+            picked = None
+            for itag in _PREFERRED_ITAGS:
+                for f in audio_fmts:
+                    if str(f.get("format_id")) == itag:
+                        picked = f
+                        break
+                if picked:
+                    break
+            if not picked:
+                # Fallback: highest bitrate audio
+                picked = sorted(audio_fmts, key=lambda f: f.get("abr") or f.get("tbr") or 0, reverse=True)[0]
+
+            fmt_url = picked["url"]
+            ext = picked.get("ext", "m4a")
+            itag = picked.get("format_id", "?")
+            print(f"[download] Selected: itag={itag} ext={ext} acodec={picked.get('acodec')} abr={picked.get('abr')}")
+
             filepath = os.path.join(tmp_dir, f"audio.{ext}")
-            print(f"[download] Downloading audio via httpx (client={client_name})...")
+            print(f"[download] Downloading audio via httpx...")
             with httpx.Client(timeout=120, follow_redirects=True) as client:
                 resp = client.get(fmt_url)
                 resp.raise_for_status()
