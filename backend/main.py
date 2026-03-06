@@ -128,14 +128,10 @@ def _get_cookies_file():
     return path
 
 
-# ── Cobalt API (primary) + yt-dlp (fallback) ─────────────────────────────────
+# ── Audio download: Cobalt (self-hosted, optional) + yt-dlp fallback ──────────
 
-COBALT_ENDPOINTS = [
-    # v7 API format (latest)
-    ("https://api.cobalt.tools/", {"downloadMode": "audio", "audioFormat": "mp3"}),
-    # v6 API format
-    ("https://api.cobalt.tools/api/json", {"isAudioOnly": True, "aFormat": "mp3"}),
-]
+# Set COBALT_API_URL to your self-hosted Cobalt instance (no public API exists)
+COBALT_API_URL = os.environ.get("COBALT_API_URL", "")
 
 # yt-dlp player clients for fallback
 _PLAYER_CLIENTS = [["default"], ["mediaconnect"], ["tv_embedded"], ["web"]]
@@ -200,60 +196,79 @@ def get_youtube_transcript(video_id: str) -> str:
         return None
 
 
+def _download_via_cobalt(url: str, tmp_dir: str) -> str:
+    """Download audio via self-hosted Cobalt instance (v10 API). Returns filepath."""
+    if not COBALT_API_URL:
+        raise Exception("COBALT_API_URL not configured")
+
+    print(f"[download] Cobalt: {COBALT_API_URL}")
+    cobalt_key = os.environ.get("COBALT_API_KEY", "")
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    if cobalt_key:
+        headers["Authorization"] = f"Api-Key {cobalt_key}"
+
+    with httpx.Client(timeout=30) as client:
+        resp = client.post(
+            COBALT_API_URL,
+            json={"url": url, "downloadMode": "audio", "audioFormat": "mp3"},
+            headers=headers,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    status = data.get("status")
+    print(f"[download] Cobalt status={status}")
+
+    if status == "error":
+        raise Exception(f"Cobalt error: {data.get('error', data)}")
+
+    # v10 returns "local-processing" with "tunnel" array of URLs
+    tunnel_urls = data.get("tunnel") or []
+    # Older versions return "url" directly
+    if not tunnel_urls and data.get("url"):
+        tunnel_urls = [data["url"]]
+
+    if not tunnel_urls:
+        raise Exception(f"No download URL in Cobalt response: {status}")
+
+    filepath = os.path.join(tmp_dir, "audio.mp3")
+    with httpx.Client(timeout=180, follow_redirects=True) as client:
+        audio_resp = client.get(tunnel_urls[0])
+        audio_resp.raise_for_status()
+        with open(filepath, "wb") as f:
+            f.write(audio_resp.content)
+
+    if os.path.getsize(filepath) == 0:
+        raise Exception("Downloaded file is empty")
+    print(f"[download] Cobalt OK: {os.path.getsize(filepath)} bytes")
+    return filepath
+
+
 def download_audio(url: str) -> tuple[str, dict]:
-    """Download audio using Cobalt API (primary), with yt-dlp fallback."""
+    """Download audio — tries Cobalt (if configured), then yt-dlp.
+
+    This is the fallback path, only called when YouTube captions are unavailable.
+    """
     tmp_dir = tempfile.mkdtemp()
     video_id = _get_video_id(url)
-
-    # Get metadata from YouTube oEmbed (public, works everywhere)
     metadata = _fetch_metadata(url, video_id)
 
-    # ── Primary: Cobalt API ──
-    for api_url, extra_params in COBALT_ENDPOINTS:
+    # ── Try Cobalt (only if self-hosted instance is configured) ──
+    if COBALT_API_URL:
         try:
-            print(f"[download] Cobalt: {api_url}")
-            body = {"url": url, **extra_params}
-            with httpx.Client(timeout=30) as client:
-                resp = client.post(
-                    api_url, json=body,
-                    headers={"Accept": "application/json", "Content-Type": "application/json"},
-                )
-                resp.raise_for_status()
-                data = resp.json()
-
-            status = data.get("status")
-            audio_url = data.get("url")
-            print(f"[download] Cobalt status={status}")
-
-            if status in ("stream", "redirect", "tunnel") and audio_url:
-                filepath = os.path.join(tmp_dir, "audio.mp3")
-                with httpx.Client(timeout=180, follow_redirects=True) as client:
-                    audio_resp = client.get(audio_url)
-                    audio_resp.raise_for_status()
-                    with open(filepath, "wb") as f:
-                        f.write(audio_resp.content)
-
-                size = os.path.getsize(filepath)
-                if size > 0:
-                    metadata["duration"] = _get_audio_duration(filepath)
-                    print(f"[download] Cobalt OK: {size} bytes, {metadata['duration']}s")
-                    return filepath, metadata
-                raise Exception("Downloaded file is empty")
-            elif status == "error":
-                raise Exception(f"Cobalt error: {data.get('text', data)}")
-            else:
-                raise Exception(f"Unexpected status: {status}")
+            filepath = _download_via_cobalt(url, tmp_dir)
+            metadata["duration"] = _get_audio_duration(filepath)
+            return filepath, metadata
         except Exception as e:
-            print(f"[download] Cobalt ({api_url}) failed: {e}")
+            print(f"[download] Cobalt failed: {e}")
             for fname in os.listdir(tmp_dir):
                 try:
                     os.remove(os.path.join(tmp_dir, fname))
                 except OSError:
                     pass
-            continue
 
     # ── Fallback: yt-dlp ──
-    print(f"[download] Cobalt failed, falling back to yt-dlp...")
+    print(f"[download] Using yt-dlp...")
     cookies_file = _get_cookies_file()
     output_path = os.path.join(tmp_dir, "audio.%(ext)s")
 
@@ -306,7 +321,7 @@ def download_audio(url: str) -> tuple[str, dict]:
 
     raise HTTPException(
         status_code=400,
-        detail=f"Failed to download audio (Cobalt + yt-dlp both failed): {last_error}",
+        detail=f"Failed to download audio: {last_error}",
     )
 
 
