@@ -15,7 +15,8 @@ load_dotenv()
 import httpx
 import yt_dlp
 import static_ffmpeg
-static_ffmpeg.add_paths()  # Makes ffmpeg available for yt-dlp
+static_ffmpeg.add_paths()  # Makes ffmpeg/ffprobe available for yt-dlp
+print(f"[init] yt-dlp version: {yt_dlp.version.__version__}")
 from google import genai
 from google.genai import types
 from fastapi import FastAPI, HTTPException
@@ -125,11 +126,9 @@ def _get_cookies_file():
     return path
 
 
-# Preferred audio itags in order: 140=AAC/128k, 251=Opus/160k, 250=Opus/70k, 249=Opus/50k, 139=AAC/48k
-_PREFERRED_ITAGS = ["140", "251", "250", "249", "139"]
-
-# Player clients to try — mediaconnect and tv_embedded bypass bot detection on cloud servers
+# Player clients to try — different clients bypass different bot detection methods
 _PLAYER_CLIENTS = [
+    ["default"],
     ["mediaconnect"],
     ["tv_embedded"],
     ["web"],
@@ -137,13 +136,14 @@ _PLAYER_CLIENTS = [
 
 
 def download_audio(url: str) -> tuple[str, dict]:
-    """Download audio from YouTube with multiple fallback strategies.
+    """Download audio from YouTube using yt-dlp with multiple fallback strategies.
 
-    Key: uses process=False to skip yt-dlp's format selector entirely,
-    then manually picks the best audio stream and downloads via httpx.
+    Lets yt-dlp handle the actual download (it manages YouTube's auth headers,
+    DASH fragment assembly, retries, and cookie forwarding).
     """
     tmp_dir = tempfile.mkdtemp()
     cookies_file = _get_cookies_file()
+    output_path = os.path.join(tmp_dir, "audio.%(ext)s")
 
     last_error = None
     for player_client in _PLAYER_CLIENTS:
@@ -152,18 +152,19 @@ def download_audio(url: str) -> tuple[str, dict]:
             print(f"[download] Trying player_client={client_name} for: {url}")
 
             opts = {
-                "format": "all",
-                "quiet": True,
-                "no_warnings": True,
+                "format": "bestaudio/best",
+                "outtmpl": output_path,
                 "noplaylist": True,
                 "extractor_args": {"youtube": {"player_client": player_client}},
+                "socket_timeout": 30,
+                "retries": 3,
+                "fragment_retries": 3,
             }
             if cookies_file:
                 opts["cookiefile"] = cookies_file
 
-            # format="all" matches every format (never fails), download=False skips download
             with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+                info = ydl.extract_info(url, download=True)
 
             metadata = {
                 "title": info.get("title", ""),
@@ -172,57 +173,25 @@ def download_audio(url: str) -> tuple[str, dict]:
                 "thumbnail": info.get("thumbnail", ""),
             }
 
-            # Get all formats (could be in "formats" or "requested_formats")
-            formats = info.get("formats") or info.get("requested_formats") or []
-            # Also check entries (for playlists/multi-format responses)
-            if not formats and info.get("entries"):
-                formats = info["entries"][0].get("formats", [])
+            # Find the downloaded file
+            for fname in os.listdir(tmp_dir):
+                fpath = os.path.join(tmp_dir, fname)
+                if os.path.isfile(fpath) and os.path.getsize(fpath) > 0:
+                    size = os.path.getsize(fpath)
+                    print(f"[download] OK: {fname} ({size} bytes) | {metadata['duration']}s")
+                    return fpath, metadata
 
-            audio_fmts = [
-                f for f in formats
-                if f.get("acodec", "none") != "none" and f.get("url")
-            ]
-            print(f"[download] client={client_name}: {len(formats)} total formats, {len(audio_fmts)} with audio+url")
-
-            if not audio_fmts:
-                # Log what we DID get for debugging
-                print(f"[download] No audio formats with URLs for client={client_name}")
-                for f in formats[:8]:
-                    print(f"  id={f.get('format_id')} ext={f.get('ext')} vcodec={f.get('vcodec')} "
-                          f"acodec={f.get('acodec')} url={'yes' if f.get('url') else 'NO'}")
-                continue
-
-            # Pick best audio: prefer itags in order, then highest bitrate
-            picked = None
-            for itag in _PREFERRED_ITAGS:
-                for f in audio_fmts:
-                    if str(f.get("format_id")) == itag:
-                        picked = f
-                        break
-                if picked:
-                    break
-            if not picked:
-                # Fallback: highest bitrate audio
-                picked = sorted(audio_fmts, key=lambda f: f.get("abr") or f.get("tbr") or 0, reverse=True)[0]
-
-            fmt_url = picked["url"]
-            ext = picked.get("ext", "m4a")
-            itag = picked.get("format_id", "?")
-            print(f"[download] Selected: itag={itag} ext={ext} acodec={picked.get('acodec')} abr={picked.get('abr')}")
-
-            filepath = os.path.join(tmp_dir, f"audio.{ext}")
-            print(f"[download] Downloading audio via httpx...")
-            with httpx.Client(timeout=120, follow_redirects=True) as client:
-                resp = client.get(fmt_url)
-                resp.raise_for_status()
-                with open(filepath, "wb") as f:
-                    f.write(resp.content)
-            print(f"[download] Success: {len(resp.content)} bytes | {metadata['duration']}s")
-            return filepath, metadata
+            raise Exception("Download reported success but no audio file found")
 
         except Exception as e:
-            print(f"[download] Failed with client={client_name}: {e}")
+            print(f"[download] client={client_name} failed: {e}")
             last_error = e
+            # Clean up partial files for next attempt
+            for fname in os.listdir(tmp_dir):
+                try:
+                    os.remove(os.path.join(tmp_dir, fname))
+                except OSError:
+                    pass
             continue
 
     raise HTTPException(status_code=400, detail=f"Failed to download audio: {last_error}")
@@ -454,6 +423,48 @@ def generate_thumbnail(youtube_thumbnail_url: str) -> str:
 
 
 # ── API Endpoints ─────────────────────────────────────────────────────────────
+
+@app.get("/api/debug-formats")
+async def debug_formats(url: str):
+    """Debug: see what formats YouTube returns on this server."""
+    if not YOUTUBE_URL_PATTERN.match(url):
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+    cookies_file = _get_cookies_file()
+    results = {"yt_dlp_version": yt_dlp.version.__version__}
+
+    for player_client in [["default"], ["mediaconnect"], ["tv_embedded"]]:
+        client_name = ",".join(player_client)
+        try:
+            opts = {
+                "quiet": True,
+                "noplaylist": True,
+                "extractor_args": {"youtube": {"player_client": player_client}},
+            }
+            if cookies_file:
+                opts["cookiefile"] = cookies_file
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            formats = info.get("formats") or []
+            audio_fmts = [f for f in formats if f.get("acodec", "none") != "none"]
+            results[client_name] = {
+                "title": info.get("title", "")[:50],
+                "total_formats": len(formats),
+                "audio_formats": len(audio_fmts),
+                "audio_details": [
+                    {
+                        "itag": f.get("format_id"),
+                        "ext": f.get("ext"),
+                        "acodec": f.get("acodec"),
+                        "abr": f.get("abr"),
+                        "has_url": bool(f.get("url")),
+                    }
+                    for f in audio_fmts[:10]
+                ],
+            }
+        except Exception as e:
+            results[client_name] = {"error": str(e)}
+    return results
+
 
 @app.post("/api/convert")
 async def convert(req: ConvertRequest):
