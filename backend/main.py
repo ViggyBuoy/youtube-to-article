@@ -110,40 +110,44 @@ LANGUAGE_INSTRUCTIONS = {
 
 # ── Step 1: Download audio from YouTube ───────────────────────────────────────
 
-def _get_cookies_file() -> str | None:
+def _get_cookies_file():
     """Write YOUTUBE_COOKIES env var to a temp file and return the path."""
     cookies = os.environ.get("YOUTUBE_COOKIES", "")
     if not cookies:
+        print("[cookies] No YOUTUBE_COOKIES env var found")
         return None
     path = os.path.join(tempfile.gettempdir(), "yt_cookies.txt")
     with open(path, "w") as f:
         f.write(cookies)
+    line_count = cookies.count("\n")
+    print(f"[cookies] Written cookies file: {len(cookies)} chars, {line_count} lines")
     return path
 
 
 def download_audio(url: str) -> tuple[str, dict]:
-    """Download audio to a temp file and return (filepath, metadata)."""
+    """Download audio to a temp file and return (filepath, metadata).
+
+    Strategy: first extract info to get the direct audio stream URL,
+    then download the audio stream directly via httpx (bypasses CDN bot checks).
+    Falls back to yt-dlp full download if direct download fails.
+    """
     try:
         tmp_dir = tempfile.mkdtemp()
-        outtmpl = os.path.join(tmp_dir, "audio.%(ext)s")
+        cookies_file = _get_cookies_file()
 
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": outtmpl,
+        # Step 1: Extract video info and available formats
+        extract_opts = {
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
+            "skip_download": True,
         }
-
-        # Pass cookies if available (needed for cloud servers)
-        cookies_file = _get_cookies_file()
         if cookies_file:
-            ydl_opts["cookiefile"] = cookies_file
-            print("[download] Using YouTube cookies for authentication")
+            extract_opts["cookiefile"] = cookies_file
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filepath = ydl.prepare_filename(info)
+        print(f"[download] Extracting info for: {url}")
+        with yt_dlp.YoutubeDL(extract_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
 
         metadata = {
             "title": info.get("title", ""),
@@ -151,7 +155,51 @@ def download_audio(url: str) -> tuple[str, dict]:
             "duration": info.get("duration", 0),
             "thumbnail": info.get("thumbnail", ""),
         }
-        print(f"[download] Audio saved: {filepath} | Duration: {metadata['duration']}s")
+
+        # Log available formats for debugging
+        formats = info.get("formats", [])
+        audio_formats = [f for f in formats if f.get("acodec", "none") != "none"]
+        print(f"[download] Total formats: {len(formats)} | Audio formats: {len(audio_formats)}")
+        for af in audio_formats[:5]:
+            print(f"  format_id={af.get('format_id')} ext={af.get('ext')} "
+                  f"acodec={af.get('acodec')} abr={af.get('abr')} url={'yes' if af.get('url') else 'no'}")
+
+        # Step 2: Find best audio format and download directly via httpx
+        if audio_formats:
+            # Pick the best audio format (highest bitrate)
+            best_audio = sorted(audio_formats, key=lambda f: f.get("abr") or 0, reverse=True)[0]
+            audio_url = best_audio.get("url")
+            ext = best_audio.get("ext", "webm")
+
+            if audio_url:
+                print(f"[download] Direct downloading audio: format={best_audio.get('format_id')} ext={ext}")
+                filepath = os.path.join(tmp_dir, f"audio.{ext}")
+                with httpx.Client(timeout=120, follow_redirects=True) as client:
+                    resp = client.get(audio_url)
+                    resp.raise_for_status()
+                    with open(filepath, "wb") as f:
+                        f.write(resp.content)
+                print(f"[download] Audio saved: {filepath} ({len(resp.content)} bytes)")
+                return filepath, metadata
+
+        # Fallback: use yt-dlp full download
+        print("[download] Fallback: using yt-dlp full download")
+        outtmpl = os.path.join(tmp_dir, "audio.%(ext)s")
+        dl_opts = {
+            "format": "bestaudio/best",
+            "outtmpl": outtmpl,
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+        }
+        if cookies_file:
+            dl_opts["cookiefile"] = cookies_file
+
+        with yt_dlp.YoutubeDL(dl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filepath = ydl.prepare_filename(info)
+
+        print(f"[download] Audio saved via fallback: {filepath}")
         return filepath, metadata
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to download audio: {e}")
