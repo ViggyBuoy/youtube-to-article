@@ -144,9 +144,10 @@ def download_audio(url: str) -> tuple[str, dict]:
         try:
             print(f"[download] Trying {strategy_name} for: {url}")
 
-            # Extract info — use 'ba/worst*' to ensure format selection never fails
+            # Request specific YouTube audio itags directly:
+            # 251=Opus 160k, 140=AAC 128k, 250=Opus 70k, 249=Opus 50k, 139=AAC 48k
             extract_opts = {
-                "format": "ba/worst*",
+                "format": "251/140/250/249/139/ba/worst*",
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
