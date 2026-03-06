@@ -11,12 +11,38 @@ const LANG_BADGE: Record<string, { cls: string; label: string }> = {
   hinglish: { cls: "lang-badge-hing", label: "Hinglish" },
 };
 
-const FILTERS = [
-  { key: "all", label: "All" },
-  { key: "english", label: "English Articles", icon: "🌐" },
-  { key: "hindi", label: "Hindi Articles", icon: "🇮🇳" },
-  { key: "hinglish", label: "Hinglish Articles", icon: "🔀" },
+const CATEGORY_TABS = [
+  { key: "all", label: "All", tags: [] as string[] },
+  {
+    key: "crypto",
+    label: "Crypto News",
+    tags: ["bitcoin", "ethereum", "defi", "altcoin", "crypto", "blockchain", "web3", "nft", "solana", "xrp", "binance", "coinbase"],
+  },
+  {
+    key: "forex",
+    label: "Forex News",
+    tags: ["forex", "currency", "dollar", "eur", "gbp", "fx", "yen", "pound"],
+  },
+  {
+    key: "usmarket",
+    label: "US Market News",
+    tags: ["stocks", "market", "nasdaq", "sp500", "fed", "economy", "wall-street", "dow", "treasury", "inflation"],
+  },
+  {
+    key: "press",
+    label: "Press Release",
+    tags: ["press-release", "announcement", "partnership", "launch", "funding", "acquisition"],
+  },
 ];
+
+interface Coin {
+  id: string;
+  symbol: string;
+  name: string;
+  image: string;
+  current_price: number;
+  price_change_percentage_24h: number;
+}
 
 interface Article {
   id: number;
@@ -27,6 +53,7 @@ interface Article {
   thumbnail: string;
   duration: number;
   language: string;
+  tags?: string;
   created_at: string;
 }
 
@@ -67,9 +94,12 @@ function langOf(a: Article) {
 
 export default function HomePage() {
   const [articles, setArticles] = useState<Article[]>([]);
-  const [filter, setFilter] = useState("all");
+  const [category, setCategory] = useState("all");
   const [loading, setLoading] = useState(true);
   const [tags, setTags] = useState<{ name: string; count: number }[]>([]);
+  const [coins, setCoins] = useState<Coin[]>([]);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     fetch(`${API_BASE}/api/articles`, { cache: "no-store" })
@@ -82,10 +112,35 @@ export default function HomePage() {
       .then((r) => (r.ok ? r.json() : { tags: [] }))
       .then((d) => setTags((d.tags || []).slice(0, 15)))
       .catch(() => setTags([]));
+
+    fetch(
+      "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=20&page=1&sparkline=false"
+    )
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: Coin[]) => setCoins(data))
+      .catch(() => setCoins([]));
   }, []);
 
-  const filtered =
-    filter === "all" ? articles : articles.filter((a) => a.language === filter);
+  /* ── filtering ── */
+  const activeTab = CATEGORY_TABS.find((t) => t.key === category) || CATEGORY_TABS[0];
+  let filtered = articles;
+
+  // Category filter by tags
+  if (activeTab.tags.length > 0) {
+    filtered = filtered.filter((a) => {
+      const articleTags = (a.tags || "").toLowerCase().split(",").map((t) => t.trim());
+      return activeTab.tags.some((catTag) =>
+        articleTags.some((aTag) => aTag.includes(catTag))
+      );
+    });
+  }
+
+  // Search filter
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase();
+    filtered = filtered.filter((a) => a.title.toLowerCase().includes(q));
+  }
+
   const featured = filtered[0] || null;
   const sideList = filtered.slice(1, 5);
   const gridArticles = filtered.slice(5);
@@ -122,6 +177,30 @@ export default function HomePage() {
 
   return (
     <div className="cp-page">
+      {/* ─── CRYPTO TICKER ─── */}
+      {coins.length > 0 && (
+        <div className="cd-ticker-bar">
+          <div className="cd-ticker-track">
+            {[...coins, ...coins].map((c, i) => {
+              const up = c.price_change_percentage_24h >= 0;
+              return (
+                <div key={`${c.id}-${i}`} className="cd-ticker-item">
+                  <img src={c.image} alt={c.name} className="cd-ticker-logo" />
+                  <span className="cd-ticker-name">{c.name}</span>
+                  <span className="cd-ticker-symbol">{c.symbol.toUpperCase()}</span>
+                  <span className="cd-ticker-price">
+                    ${c.current_price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className={`cd-ticker-change ${up ? "cd-ticker-up" : "cd-ticker-down"}`}>
+                    {up ? "\u25B2" : "\u25BC"} {Math.abs(c.price_change_percentage_24h).toFixed(2)}%
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="cd-layout">
         {/* ─── LEFT SIDEBAR ─── */}
         <aside className="cd-left">
@@ -164,24 +243,47 @@ export default function HomePage() {
 
         {/* ─── MAIN CONTENT ─── */}
         <main className="cd-main">
-          {/* header + pills */}
+          {/* header */}
           <div className="cd-feat-head">
             <h2>Featured Stories</h2>
             <span className="cd-view-all">View all stories &rarr;</span>
           </div>
 
-          <div className="cd-pills">
-            {FILTERS.map((f) => (
+          {/* Category tabs + search */}
+          <div className="cd-category-tabs">
+            {CATEGORY_TABS.map((tab) => (
               <button
-                key={f.key}
-                className={`cd-pill${filter === f.key ? " cd-pill-on" : ""}`}
-                onClick={() => setFilter(f.key)}
+                key={tab.key}
+                className={`cd-cat-tab${category === tab.key ? " cd-cat-tab-active" : ""}`}
+                onClick={() => setCategory(tab.key)}
               >
-                {f.icon && <span className="cd-pill-icon">{f.icon}</span>}
-                {f.label}
+                {tab.label}
               </button>
             ))}
+            <button
+              className={`cd-cat-tab cd-search-btn${showSearch ? " cd-cat-tab-active" : ""}`}
+              onClick={() => {
+                setShowSearch(!showSearch);
+                if (showSearch) setSearchQuery("");
+              }}
+              title="Search articles"
+            >
+              &#128269;
+            </button>
           </div>
+
+          {showSearch && (
+            <div className="cd-search-wrap">
+              <input
+                type="text"
+                className="cd-search-input"
+                placeholder="Search articles by title..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                autoFocus
+              />
+            </div>
+          )}
 
           {/* hero + side list */}
           {featured && (
@@ -251,13 +353,6 @@ export default function HomePage() {
 
         {/* ─── RIGHT SIDEBAR ─── */}
         <aside className="cd-right">
-          {/* CTA card */}
-          <Link href="/app" className="cd-cta-card">
-            <div className="cd-cta-plus">+</div>
-            <h4>Convert New Video</h4>
-            <p>Turn any YouTube video into an SEO-optimized article</p>
-          </Link>
-
           {/* Stats */}
           <div className="cd-stats">
             <h4 className="cd-stats-head">Article Stats</h4>

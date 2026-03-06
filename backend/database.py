@@ -159,7 +159,7 @@ async def get_all_articles() -> list[dict]:
     async with _pool.acquire() as conn:
         rows = await conn.fetch(
             "SELECT id, slug, title, meta_description, channel, channel_slug, "
-            "channel_avatar, thumbnail, duration, language, created_at "
+            "channel_avatar, thumbnail, duration, language, tags, created_at "
             "FROM articles ORDER BY created_at DESC"
         )
         return [_row_to_dict(row) for row in rows]

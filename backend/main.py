@@ -691,7 +691,8 @@ def generate_thumbnail(image_url: str, article_title: str = "") -> str:
             "for a crypto news thumbnail. The style should be inspired by modern graphic "
             "novels with bold, dark ink outlines and clean cel-shading. "
             "The elements in the image should be heavily inspired by the title of the "
-            "article and image I have shared."
+            "article and image I have shared. "
+            "Make sure you remove any logo if you find in the image."
             f"{title_line}"
         )
         print(f"[thumbnail] Model: gemini-3.1-flash-image-preview")
