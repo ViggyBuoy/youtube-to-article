@@ -1,13 +1,12 @@
+import base64
 import json
 import os
 import re
 import subprocess
 import time
-import uuid
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
@@ -23,7 +22,6 @@ from google import genai
 from google.genai import types
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from database import init_db, close_db, insert_article, get_all_articles, get_article_by_slug
@@ -61,10 +59,6 @@ GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 # Configure Gemini client
 gemini_client = genai.Client(api_key=GEMINI_KEY)
 
-BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")
-STATIC_DIR = Path(__file__).parent / "static"
-THUMBNAILS_DIR = STATIC_DIR / "thumbnails"
-THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
 
 YOUTUBE_URL_PATTERN = re.compile(
     r"^(https?://)?(www\.)?(youtube\.com/watch\?v=|youtu\.be/)[\w-]{11}"
@@ -514,8 +508,8 @@ Article (first 500 chars): {article[:500]}"""
 
 def generate_thumbnail(youtube_thumbnail_url: str) -> str:
     """Download the YouTube thumbnail, transform it via Gemini into a
-    comic-book style crypto news thumbnail, and return the public URL
-    of the generated image.  Falls back to the original YouTube URL on error.
+    comic-book style crypto news thumbnail, and return a base64 data URL.
+    Falls back to the original YouTube URL on error.
     """
     try:
         # Download the original YouTube thumbnail
@@ -534,7 +528,6 @@ def generate_thumbnail(youtube_thumbnail_url: str) -> str:
             "highlights and deep, inked shadows."
         )
         print(f"[thumbnail] Model: gemini-3.1-flash-image-preview")
-        print(f"[thumbnail] Prompt: {prompt}")
 
         response = gemini_client.models.generate_content(
             model="gemini-3.1-flash-image-preview",
@@ -547,17 +540,14 @@ def generate_thumbnail(youtube_thumbnail_url: str) -> str:
             ),
         )
 
-        # Extract the generated image from response parts
+        # Extract the generated image and return as base64 data URL
         for part in response.candidates[0].content.parts:
             if part.inline_data and part.inline_data.mime_type.startswith("image/"):
-                # Save the generated image
-                ext = part.inline_data.mime_type.split("/")[-1]
-                filename = f"{uuid.uuid4().hex}.{ext}"
-                filepath = THUMBNAILS_DIR / filename
-                filepath.write_bytes(part.inline_data.data)
-                url = f"{BACKEND_URL}/static/thumbnails/{filename}"
-                print(f"[thumbnail] SUCCESS: saved {len(part.inline_data.data)} bytes -> {url}")
-                return url
+                mime = part.inline_data.mime_type
+                b64 = base64.b64encode(part.inline_data.data).decode()
+                data_url = f"data:{mime};base64,{b64}"
+                print(f"[thumbnail] SUCCESS: generated {len(part.inline_data.data)} bytes as data URL")
+                return data_url
 
         # No image part found – fall back
         print("[thumbnail] Gemini returned no image parts, using YouTube thumbnail")
@@ -687,6 +677,3 @@ async def get_article(slug: str):
         raise HTTPException(status_code=404, detail="Article not found")
     return article
 
-
-# ── Static files (must be LAST) ──────────────────────────────────────────────
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
