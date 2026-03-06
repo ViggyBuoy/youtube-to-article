@@ -24,8 +24,13 @@ from google import genai
 from google.genai import types
 import bcrypt
 import jwt
-import feedparser
-from bs4 import BeautifulSoup
+try:
+    import feedparser
+    from bs4 import BeautifulSoup
+    SCRAPER_AVAILABLE = True
+except ImportError as e:
+    print(f"[init] WARNING: Scraper dependencies missing ({e}), scraper disabled")
+    SCRAPER_AVAILABLE = False
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -55,8 +60,14 @@ async def lifespan(app: FastAPI):
         print(f"[startup] FATAL: Database init failed: {e}")
         raise
     # Start background scraper
-    _scraper_task = asyncio.create_task(_scraper_loop())
-    print("[startup] Background scraper started (30-min interval)")
+    if SCRAPER_AVAILABLE:
+        try:
+            _scraper_task = asyncio.create_task(_scraper_loop())
+            print("[startup] Background scraper started (30-min interval)")
+        except Exception as e:
+            print(f"[startup] WARNING: Failed to start scraper: {e}")
+    else:
+        print("[startup] Scraper disabled (missing dependencies)")
     yield
     # Shutdown
     if _scraper_task:
@@ -832,7 +843,7 @@ async def _run_scrape_cycle():
 
     for source in enabled:
         try:
-            entries = _fetch_rss_entries(source["rss_url"])
+            entries = await asyncio.to_thread(_fetch_rss_entries, source["rss_url"])
             print(f"[scraper] {source['name']}: {len(entries)} RSS entries")
 
             for entry in entries:
@@ -853,14 +864,14 @@ async def _run_scrape_cycle():
                     continue
 
                 # Extract article text
-                text, og_image = _extract_article_text(url)
+                text, og_image = await asyncio.to_thread(_extract_article_text, url)
                 if not text:
                     await insert_seen_url(url, source["id"], title, "skipped_dup")
                     skipped += 1
                     continue
 
                 # Rewrite with Gemini
-                article_data = generate_rewritten_article(text, title, source["name"])
+                article_data = await asyncio.to_thread(generate_rewritten_article, text, title, source["name"])
 
                 # Generate slug
                 slug = generate_slug(article_data["title"], article_data["body"])
@@ -872,7 +883,7 @@ async def _run_scrape_cycle():
                 thumbnail = ""
                 if og_image:
                     try:
-                        thumbnail = generate_thumbnail(og_image)
+                        thumbnail = await asyncio.to_thread(generate_thumbnail, og_image)
                     except Exception as e:
                         print(f"[scraper] Thumbnail generation failed: {e}")
                         thumbnail = og_image
@@ -920,6 +931,12 @@ async def _scraper_loop():
 
 
 # ── API Endpoints ─────────────────────────────────────────────────────────────
+
+@app.get("/api/health")
+async def health_check():
+    """Simple health check endpoint."""
+    return {"status": "ok", "scraper_available": SCRAPER_AVAILABLE}
+
 
 @app.get("/api/debug-formats")
 async def debug_formats(url: str):
@@ -1157,6 +1174,8 @@ async def admin_toggle_source(source_id: int, user: str = Depends(_verify_admin_
 @app.post("/api/admin/sources/trigger")
 async def admin_trigger_scrape(user: str = Depends(_verify_admin_token)):
     """Manually trigger one scrape cycle."""
+    if not SCRAPER_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Scraper dependencies not installed")
     asyncio.create_task(_run_scrape_cycle())
     return {"status": "Scrape cycle started"}
 
