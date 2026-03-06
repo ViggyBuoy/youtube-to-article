@@ -114,8 +114,9 @@ def _get_cookies_file():
     """Write YOUTUBE_COOKIES env var to a temp file and return the path."""
     cookies = os.environ.get("YOUTUBE_COOKIES", "")
     if not cookies:
-        print("[cookies] No YOUTUBE_COOKIES env var found")
         return None
+    # Fix newlines that may get escaped in env vars
+    cookies = cookies.replace("\\n", "\n")
     path = os.path.join(tempfile.gettempdir(), "yt_cookies.txt")
     with open(path, "w") as f:
         f.write(cookies)
@@ -124,38 +125,43 @@ def _get_cookies_file():
     return path
 
 
-def download_audio(url: str) -> tuple[str, dict]:
-    """Download audio to a temp file and return (filepath, metadata).
+# YouTube audio itags: 140=m4a/AAC/128k, 251=webm/Opus/160k, 250=Opus/70k, 249=Opus/50k
+_YT_AUDIO_FORMAT = "140/251/250/249/139/bestaudio/best"
 
-    Uses yt-dlp to extract info + direct httpx download of the audio stream.
-    Tries with cookies first, then without cookies as fallback.
+# Player clients to try — mediaconnect and tv_embedded bypass bot detection on cloud servers
+_PLAYER_CLIENTS = [
+    ["mediaconnect"],
+    ["tv_embedded"],
+    ["web"],
+]
+
+
+def download_audio(url: str) -> tuple[str, dict]:
+    """Download audio from YouTube with multiple fallback strategies.
+
+    Cycles through different yt-dlp player clients to bypass bot detection,
+    then downloads the audio stream directly via httpx (no FFmpeg needed).
     """
     tmp_dir = tempfile.mkdtemp()
     cookies_file = _get_cookies_file()
 
-    # Try multiple strategies in order
-    strategies = []
-    if cookies_file:
-        strategies.append(("with cookies", cookies_file))
-    strategies.append(("without cookies", None))
-
     last_error = None
-    for strategy_name, cfile in strategies:
+    for player_client in _PLAYER_CLIENTS:
+        client_name = ",".join(player_client)
         try:
-            print(f"[download] Trying {strategy_name} for: {url}")
+            print(f"[download] Trying player_client={client_name} for: {url}")
 
-            # Request specific YouTube audio itags directly:
-            # 251=Opus 160k, 140=AAC 128k, 250=Opus 70k, 249=Opus 50k, 139=AAC 48k
-            extract_opts = {
-                "format": "251/140/250/249/139/ba/worst*",
+            opts = {
+                "format": _YT_AUDIO_FORMAT,
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
+                "extractor_args": {"youtube": {"player_client": player_client}},
             }
-            if cfile:
-                extract_opts["cookiefile"] = cfile
+            if cookies_file:
+                opts["cookiefile"] = cookies_file
 
-            with yt_dlp.YoutubeDL(extract_opts) as ydl:
+            with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
 
             metadata = {
@@ -165,38 +171,36 @@ def download_audio(url: str) -> tuple[str, dict]:
                 "thumbnail": info.get("thumbnail", ""),
             }
 
-            # Get the selected format's direct URL
+            # Get the direct stream URL from the selected format
             fmt_url = info.get("url")
             req_fmts = info.get("requested_formats")
             if not fmt_url and req_fmts:
                 fmt_url = req_fmts[0].get("url")
+            if not fmt_url:
+                # Fallback: scan all formats for any audio URL
+                formats = info.get("formats", [])
+                audio_fmts = [f for f in formats if f.get("acodec", "none") != "none" and f.get("url")]
+                if audio_fmts:
+                    fmt_url = audio_fmts[-1]["url"]
+                    print(f"[download] Found audio URL from formats list ({len(audio_fmts)} audio formats)")
 
-            if fmt_url:
-                ext = info.get("ext", "webm")
-                filepath = os.path.join(tmp_dir, f"audio.{ext}")
-                print(f"[download] Downloading audio stream directly via httpx...")
-                with httpx.Client(timeout=120, follow_redirects=True) as client:
-                    resp = client.get(fmt_url)
-                    resp.raise_for_status()
-                    with open(filepath, "wb") as f:
-                        f.write(resp.content)
-                print(f"[download] Success ({strategy_name}): {len(resp.content)} bytes")
-                return filepath, metadata
+            if not fmt_url:
+                print(f"[download] No audio URL found with client={client_name}")
+                continue
 
-            # If no direct URL, try yt-dlp full download
-            print(f"[download] No direct URL, trying yt-dlp download ({strategy_name})")
-            outtmpl = os.path.join(tmp_dir, "audio.%(ext)s")
-            extract_opts["outtmpl"] = outtmpl
-            extract_opts.pop("format", None)
-
-            with yt_dlp.YoutubeDL(extract_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                filepath = ydl.prepare_filename(info)
-            print(f"[download] Success via yt-dlp download ({strategy_name})")
+            ext = info.get("ext", "m4a")
+            filepath = os.path.join(tmp_dir, f"audio.{ext}")
+            print(f"[download] Downloading audio via httpx (client={client_name})...")
+            with httpx.Client(timeout=120, follow_redirects=True) as client:
+                resp = client.get(fmt_url)
+                resp.raise_for_status()
+                with open(filepath, "wb") as f:
+                    f.write(resp.content)
+            print(f"[download] Success: {len(resp.content)} bytes | {metadata['duration']}s")
             return filepath, metadata
 
         except Exception as e:
-            print(f"[download] Failed {strategy_name}: {e}")
+            print(f"[download] Failed with client={client_name}: {e}")
             last_error = e
             continue
 
