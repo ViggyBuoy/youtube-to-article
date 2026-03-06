@@ -108,6 +108,17 @@ LANGUAGE_INSTRUCTIONS = {
 
 # ── Step 1: Download audio from YouTube ───────────────────────────────────────
 
+def _get_cookies_file() -> str | None:
+    """Write YOUTUBE_COOKIES env var to a temp file and return the path."""
+    cookies = os.environ.get("YOUTUBE_COOKIES", "")
+    if not cookies:
+        return None
+    path = os.path.join(tempfile.gettempdir(), "yt_cookies.txt")
+    with open(path, "w") as f:
+        f.write(cookies)
+    return path
+
+
 def download_audio(url: str) -> tuple[str, dict]:
     """Download audio to a temp file and return (filepath, metadata)."""
     try:
@@ -121,6 +132,12 @@ def download_audio(url: str) -> tuple[str, dict]:
             "no_warnings": True,
             "noplaylist": True,
         }
+
+        # Pass cookies if available (needed for cloud servers)
+        cookies_file = _get_cookies_file()
+        if cookies_file:
+            ydl_opts["cookiefile"] = cookies_file
+            print("[download] Using YouTube cookies for authentication")
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
