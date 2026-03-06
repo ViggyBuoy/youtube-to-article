@@ -90,6 +90,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ── Global exception handler to ensure CORS headers on 500 errors ────────────
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch unhandled exceptions so CORS middleware can still add headers."""
+    print(f"[error] Unhandled exception on {request.method} {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {type(exc).__name__}"},
+    )
+
 ASSEMBLYAI_KEY = os.environ.get("ASSEMBLYAI_API_KEY", "")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 
@@ -863,13 +878,18 @@ async def _run_scrape_cycle():
     recent_titles = await get_recent_article_titles(hours=24)
     published = 0
     skipped = 0
+    MAX_PER_SOURCE = 3  # Limit articles per source per cycle to avoid API exhaustion
 
     for source in enabled:
         try:
             entries = await asyncio.to_thread(_fetch_rss_entries, source["rss_url"])
             _log_scraper(f"{source['name']}: {len(entries)} RSS entries")
+            source_published = 0
 
             for entry in entries:
+                if source_published >= MAX_PER_SOURCE:
+                    _log_scraper(f"{source['name']}: hit {MAX_PER_SOURCE}-article limit, moving to next source")
+                    break
                 url = entry["link"]
                 title = entry["title"]
 
@@ -928,7 +948,11 @@ async def _run_scrape_cycle():
                 await insert_seen_url(url, source["id"], article_data["title"], "published")
                 recent_titles.append(article_data["title"])
                 published += 1
+                source_published += 1
                 _log_scraper(f"Published: '{article_data['title'][:60]}'")
+
+                # Rate limit: wait between articles to avoid Gemini API exhaustion
+                await asyncio.sleep(8)
 
         except Exception as e:
             _log_scraper(f"Error processing source '{source['name']}': {e}", "error")
@@ -1008,8 +1032,12 @@ async def convert(req: ConvertRequest):
     if not GEMINI_KEY:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not set")
 
-    # Download audio via Cobalt API
-    filepath, metadata = download_audio(url)
+    # Download audio
+    try:
+        filepath, metadata = download_audio(url)
+    except Exception as e:
+        print(f"[convert] Audio download failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Audio download failed: {e}")
 
     # Start thumbnail generation in parallel
     executor = ThreadPoolExecutor(max_workers=1)
@@ -1018,11 +1046,18 @@ async def convert(req: ConvertRequest):
     try:
         transcript = await transcribe_audio(filepath)
         article_data = generate_article(transcript, metadata["title"], metadata["channel"], req.language)
+    except Exception as e:
+        print(f"[convert] Processing failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Article generation failed: {e}")
     finally:
         if os.path.exists(filepath):
             os.remove(filepath)
 
-    ai_thumbnail = thumbnail_future.result(timeout=60)
+    try:
+        ai_thumbnail = thumbnail_future.result(timeout=60)
+    except Exception as e:
+        print(f"[convert] Thumbnail generation failed: {e}")
+        ai_thumbnail = metadata["thumbnail"]  # Fallback to original thumbnail
     executor.shutdown(wait=False)
     metadata["thumbnail"] = ai_thumbnail
     print(f"[convert] Thumbnail ready: {ai_thumbnail[:80]}...")
