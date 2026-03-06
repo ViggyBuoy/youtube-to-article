@@ -14,6 +14,8 @@ load_dotenv()
 
 import httpx
 import yt_dlp
+import static_ffmpeg
+static_ffmpeg.add_paths()  # Makes ffmpeg available for yt-dlp
 from google import genai
 from google.genai import types
 from fastapi import FastAPI, HTTPException
@@ -126,6 +128,7 @@ def download_audio(url: str) -> tuple[str, dict]:
         outtmpl = os.path.join(tmp_dir, "audio.%(ext)s")
 
         ydl_opts = {
+            "format": "bestaudio/best",
             "outtmpl": outtmpl,
             "quiet": True,
             "no_warnings": True,
