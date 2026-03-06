@@ -127,82 +127,79 @@ def _get_cookies_file():
 def download_audio(url: str) -> tuple[str, dict]:
     """Download audio to a temp file and return (filepath, metadata).
 
-    Strategy: first extract info to get the direct audio stream URL,
-    then download the audio stream directly via httpx (bypasses CDN bot checks).
-    Falls back to yt-dlp full download if direct download fails.
+    Uses yt-dlp to extract info + direct httpx download of the audio stream.
+    Tries with cookies first, then without cookies as fallback.
     """
-    try:
-        tmp_dir = tempfile.mkdtemp()
-        cookies_file = _get_cookies_file()
+    tmp_dir = tempfile.mkdtemp()
+    cookies_file = _get_cookies_file()
 
-        # Step 1: Extract video info and available formats
-        extract_opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-            "skip_download": True,
-        }
-        if cookies_file:
-            extract_opts["cookiefile"] = cookies_file
+    # Try multiple strategies in order
+    strategies = []
+    if cookies_file:
+        strategies.append(("with cookies", cookies_file))
+    strategies.append(("without cookies", None))
 
-        print(f"[download] Extracting info for: {url}")
-        with yt_dlp.YoutubeDL(extract_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+    last_error = None
+    for strategy_name, cfile in strategies:
+        try:
+            print(f"[download] Trying {strategy_name} for: {url}")
 
-        metadata = {
-            "title": info.get("title", ""),
-            "channel": info.get("uploader", info.get("channel", "")),
-            "duration": info.get("duration", 0),
-            "thumbnail": info.get("thumbnail", ""),
-        }
+            # Extract info — use 'ba/worst*' to ensure format selection never fails
+            extract_opts = {
+                "format": "ba/worst*",
+                "quiet": True,
+                "no_warnings": True,
+                "noplaylist": True,
+            }
+            if cfile:
+                extract_opts["cookiefile"] = cfile
 
-        # Log available formats for debugging
-        formats = info.get("formats", [])
-        audio_formats = [f for f in formats if f.get("acodec", "none") != "none"]
-        print(f"[download] Total formats: {len(formats)} | Audio formats: {len(audio_formats)}")
-        for af in audio_formats[:5]:
-            print(f"  format_id={af.get('format_id')} ext={af.get('ext')} "
-                  f"acodec={af.get('acodec')} abr={af.get('abr')} url={'yes' if af.get('url') else 'no'}")
+            with yt_dlp.YoutubeDL(extract_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
 
-        # Step 2: Find best audio format and download directly via httpx
-        if audio_formats:
-            # Pick the best audio format (highest bitrate)
-            best_audio = sorted(audio_formats, key=lambda f: f.get("abr") or 0, reverse=True)[0]
-            audio_url = best_audio.get("url")
-            ext = best_audio.get("ext", "webm")
+            metadata = {
+                "title": info.get("title", ""),
+                "channel": info.get("uploader", info.get("channel", "")),
+                "duration": info.get("duration", 0),
+                "thumbnail": info.get("thumbnail", ""),
+            }
 
-            if audio_url:
-                print(f"[download] Direct downloading audio: format={best_audio.get('format_id')} ext={ext}")
+            # Get the selected format's direct URL
+            fmt_url = info.get("url")
+            req_fmts = info.get("requested_formats")
+            if not fmt_url and req_fmts:
+                fmt_url = req_fmts[0].get("url")
+
+            if fmt_url:
+                ext = info.get("ext", "webm")
                 filepath = os.path.join(tmp_dir, f"audio.{ext}")
+                print(f"[download] Downloading audio stream directly via httpx...")
                 with httpx.Client(timeout=120, follow_redirects=True) as client:
-                    resp = client.get(audio_url)
+                    resp = client.get(fmt_url)
                     resp.raise_for_status()
                     with open(filepath, "wb") as f:
                         f.write(resp.content)
-                print(f"[download] Audio saved: {filepath} ({len(resp.content)} bytes)")
+                print(f"[download] Success ({strategy_name}): {len(resp.content)} bytes")
                 return filepath, metadata
 
-        # Fallback: use yt-dlp full download
-        print("[download] Fallback: using yt-dlp full download")
-        outtmpl = os.path.join(tmp_dir, "audio.%(ext)s")
-        dl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": outtmpl,
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-        }
-        if cookies_file:
-            dl_opts["cookiefile"] = cookies_file
+            # If no direct URL, try yt-dlp full download
+            print(f"[download] No direct URL, trying yt-dlp download ({strategy_name})")
+            outtmpl = os.path.join(tmp_dir, "audio.%(ext)s")
+            extract_opts["outtmpl"] = outtmpl
+            extract_opts.pop("format", None)
 
-        with yt_dlp.YoutubeDL(dl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filepath = ydl.prepare_filename(info)
+            with yt_dlp.YoutubeDL(extract_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filepath = ydl.prepare_filename(info)
+            print(f"[download] Success via yt-dlp download ({strategy_name})")
+            return filepath, metadata
 
-        print(f"[download] Audio saved via fallback: {filepath}")
-        return filepath, metadata
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to download audio: {e}")
+        except Exception as e:
+            print(f"[download] Failed {strategy_name}: {e}")
+            last_error = e
+            continue
+
+    raise HTTPException(status_code=400, detail=f"Failed to download audio: {last_error}")
 
 
 # ── Step 2: Transcribe with AssemblyAI ────────────────────────────────────────
