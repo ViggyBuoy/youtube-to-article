@@ -197,7 +197,14 @@ def get_youtube_transcript(video_id: str) -> str:
 
 
 def _download_via_cobalt(url: str, tmp_dir: str) -> str:
-    """Download audio via self-hosted Cobalt instance (v10 API). Returns filepath."""
+    """Download audio via self-hosted Cobalt v10 API. Returns filepath.
+
+    Response types handled:
+      tunnel/redirect → single url field
+      local-processing → tunnel[] array (needs client-side merge)
+      picker → audio field (e.g. slideshow posts)
+      error → raises
+    """
     if not COBALT_API_URL:
         raise Exception("COBALT_API_URL not configured")
 
@@ -222,18 +229,24 @@ def _download_via_cobalt(url: str, tmp_dir: str) -> str:
     if status == "error":
         raise Exception(f"Cobalt error: {data.get('error', data)}")
 
-    # v10 returns "local-processing" with "tunnel" array of URLs
-    tunnel_urls = data.get("tunnel") or []
-    # Older versions return "url" directly
-    if not tunnel_urls and data.get("url"):
-        tunnel_urls = [data["url"]]
+    # Extract download URL based on response type
+    audio_url = None
+    if status in ("tunnel", "redirect"):
+        audio_url = data.get("url")
+    elif status == "local-processing":
+        tunnels = data.get("tunnel") or []
+        audio_url = tunnels[0] if tunnels else None
+    elif status == "picker":
+        audio_url = data.get("audio")
 
-    if not tunnel_urls:
-        raise Exception(f"No download URL in Cobalt response: {status}")
+    if not audio_url:
+        raise Exception(f"No download URL in Cobalt response (status={status})")
 
-    filepath = os.path.join(tmp_dir, "audio.mp3")
+    filename = data.get("filename", "audio.mp3")
+    filepath = os.path.join(tmp_dir, filename)
+    print(f"[download] Downloading from Cobalt: {filename}")
     with httpx.Client(timeout=180, follow_redirects=True) as client:
-        audio_resp = client.get(tunnel_urls[0])
+        audio_resp = client.get(audio_url)
         audio_resp.raise_for_status()
         with open(filepath, "wb") as f:
             f.write(audio_resp.content)
