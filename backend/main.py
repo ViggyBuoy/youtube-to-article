@@ -855,7 +855,7 @@ def _is_duplicate_topic(new_title: str, recent_titles: list[str], threshold: flo
 
 
 def _fetch_rss_entries(rss_url: str) -> list[dict]:
-    """Parse RSS feed and return recent entries."""
+    """Parse RSS feed and return recent entries with inline content and embedded links."""
     try:
         # Fetch RSS with User-Agent to avoid blocks
         with httpx.Client(timeout=15, headers=_SCRAPER_HEADERS) as client:
@@ -864,9 +864,29 @@ def _fetch_rss_entries(rss_url: str) -> list[dict]:
         feed = feedparser.parse(resp.text)
         entries = []
         for entry in feed.entries[:10]:
+            # Extract inline content from RSS (content:encoded > summary)
+            inline_text = ""
+            inline_html = ""
+            if hasattr(entry, "content") and entry.content:
+                inline_html = entry.content[0].get("value", "")
+            if not inline_html and entry.get("summary"):
+                inline_html = entry.summary
+
+            # Extract embedded links from inline HTML (e.g. "Read more" links)
+            content_links: list[str] = []
+            if inline_html:
+                inline_soup = BeautifulSoup(inline_html, "html.parser")
+                inline_text = inline_soup.get_text(separator="\n", strip=True)
+                for a_tag in inline_soup.find_all("a", href=True):
+                    href = a_tag["href"]
+                    if href.startswith("http") and href != entry.get("link", ""):
+                        content_links.append(href)
+
             entries.append({
                 "title": entry.get("title", ""),
                 "link": entry.get("link", ""),
+                "inline_text": inline_text,
+                "content_links": content_links,
             })
         print(f"[scraper] RSS OK: {len(entries)} entries from {rss_url[:50]}")
         return entries
@@ -902,16 +922,30 @@ def _extract_article_text(url: str) -> tuple[str, str]:
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
 
-        # Try <article> first, then <main>, then largest text block
+        # Try semantic selectors first, then largest content div
         content = None
         for selector in ["article", "main", '[role="main"]']:
             el = soup.find(selector)
             if el:
                 content = el.get_text(separator="\n", strip=True)
-                break
+                if len(content) >= 200:
+                    break
+                content = None  # Too short, keep trying
+
+        # Fallback: find the div with the most text (likely the article body)
+        if not content:
+            best_div = None
+            best_len = 0
+            for div in soup.find_all("div"):
+                div_text = div.get_text(separator="\n", strip=True)
+                if len(div_text) > best_len:
+                    best_len = len(div_text)
+                    best_div = div_text
+            if best_div and best_len >= 200:
+                content = best_div
 
         if not content:
-            # Fallback: get body text
+            # Last resort: get body text
             body = soup.find("body")
             content = body.get_text(separator="\n", strip=True) if body else soup.get_text(separator="\n", strip=True)
 
@@ -1065,12 +1099,27 @@ async def _run_scrape_cycle():
                     continue
 
                 try:
-                    # Extract article text
+                    # Extract article text from page HTML
                     _log_scraper(f"Extracting: {title[:50]}")
                     text, og_image = await asyncio.to_thread(_extract_article_text, url)
+
+                    # Fallback 1: try embedded content links from RSS body
+                    if not text and entry.get("content_links"):
+                        for alt_url in entry["content_links"][:2]:
+                            _log_scraper(f"Trying content link: {alt_url[:60]}")
+                            text, alt_og = await asyncio.to_thread(_extract_article_text, alt_url)
+                            if text:
+                                og_image = og_image or alt_og
+                                break
+
+                    # Fallback 2: use RSS inline content if page extraction failed
+                    if not text and entry.get("inline_text") and len(entry["inline_text"]) >= 200:
+                        text = entry["inline_text"][:15000]
+                        _log_scraper(f"Using RSS inline content for: {title[:50]}")
+
                     if not text:
-                        _log_scraper(f"Skip (no text): {title[:50]}", "warn")
-                        await insert_seen_url(url, source["id"], title, "skipped_dup")
+                        _log_scraper(f"Skip (no text, {len(entry.get('inline_text',''))} RSS chars): {title[:50]}", "warn")
+                        await insert_seen_url(url, source["id"], title, "skipped_notext")
                         skipped += 1
                         continue
 
