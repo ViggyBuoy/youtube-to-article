@@ -162,6 +162,7 @@ if GCP_PROJECT:
             vertexai=True,
             project=GCP_PROJECT,
             location=GCP_LOCATION,
+            http_options=types.HttpOptions(api_version="v1"),
         )
         print(f"[init] Gemini: Vertex AI mode (project={GCP_PROJECT}, location={GCP_LOCATION})")
     except Exception as _vex:
@@ -475,14 +476,11 @@ def get_transcript_via_gemini(url: str) -> Optional[str]:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-pro",
             contents=[
-                types.Content(
-                    parts=[
-                        types.Part.from_uri(file_uri=url, mime_type="video/*"),
-                        types.Part(
-                            text="I want word by word text of what the speaker is speaking in the video"
-                        ),
-                    ]
-                )
+                types.Part.from_uri(
+                    file_uri=url,
+                    mime_type="video/mp4",
+                ),
+                "I want word by word text of what the speaker is speaking in the video",
             ],
             config=types.GenerateContentConfig(
                 temperature=0.1,

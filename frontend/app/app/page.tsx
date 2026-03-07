@@ -27,8 +27,8 @@ interface ConvertResult {
 }
 
 const STEPS = [
-  "Downloading audio...",
-  "Transcribing with AssemblyAI...",
+  "Fetching video metadata...",
+  "Transcribing with Gemini 2.5 Pro...",
   "Generating SEO article...",
   "Creating AI thumbnail...",
 ];
