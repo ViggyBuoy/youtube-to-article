@@ -123,13 +123,26 @@ GCP_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
 
 # On Render/Railway: paste the service-account JSON as GOOGLE_CREDENTIALS_JSON env var.
 # The code writes it to a temp file so the Google SDK can find it automatically.
-_creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
-if _creds_json and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+_creds_json_raw = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
+if _creds_json_raw and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
     _creds_path = "/tmp/gcp-sa-key.json"
-    with open(_creds_path, "w") as f:
-        f.write(_creds_json)
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _creds_path
-    print(f"[init] Wrote service-account key to {_creds_path}")
+    # Clean up common env-var issues: strip surrounding quotes, fix escaped newlines
+    _clean = _creds_json_raw.strip()
+    if _clean.startswith("'") and _clean.endswith("'"):
+        _clean = _clean[1:-1]
+    if _clean.startswith('"') and _clean.endswith('"') and not _clean.startswith('{"'):
+        _clean = _clean[1:-1]
+    _clean = _clean.replace("\\n", "\n").replace("\\\\n", "\\n")
+    # Validate it's real JSON before writing
+    try:
+        json.loads(_clean)
+        with open(_creds_path, "w") as f:
+            f.write(_clean)
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _creds_path
+        print(f"[init] Wrote service-account key to {_creds_path}")
+    except json.JSONDecodeError as e:
+        print(f"[init] WARNING: GOOGLE_CREDENTIALS_JSON is not valid JSON: {e}")
+        print(f"[init] First 100 chars: {_clean[:100]}")
 
 if GCP_PROJECT:
     # Vertex AI mode: uses $300 GCP credits & service account auth
