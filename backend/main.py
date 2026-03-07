@@ -719,11 +719,11 @@ Return ONLY the JSON object, no markdown code fences, no extra text.
 TRANSCRIPT TO PROCESS:
 {transcript}"""
 
-    print(f"[article] Model: gemini-3.1-flash-lite-preview | Temperature: 0.6")
+    print(f"[article] Model: gemini-2.0-flash-lite | Temperature: 0.6")
     print(f"[article] Prompt length: {len(prompt)} chars | Transcript length: {len(transcript)} chars")
 
     response = gemini_client.models.generate_content(
-        model="gemini-3.1-flash-lite-preview",
+        model="gemini-2.0-flash-lite",
         contents=prompt,
         config=types.GenerateContentConfig(temperature=0.6),
     )
@@ -774,7 +774,7 @@ Title: {title}
 Article (first 500 chars): {article[:500]}"""
 
     response = gemini_client.models.generate_content(
-        model="gemini-3.1-flash-lite-preview",
+        model="gemini-2.0-flash-lite",
         contents=prompt,
         config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=100),
     )
@@ -814,10 +814,10 @@ def generate_thumbnail(image_url: str, article_title: str = "") -> str:
             "the frame with no cropping — leave adequate padding around edges."
             f"{title_line}"
         )
-        print(f"[thumbnail] Model: gemini-3.1-flash-image-preview")
+        print(f"[thumbnail] Model: gemini-2.0-flash")
 
         response = gemini_client.models.generate_content(
-            model="gemini-3.1-flash-image-preview",
+            model="gemini-2.0-flash",
             contents=[
                 types.Part.from_bytes(data=original_bytes, mime_type="image/jpeg"),
                 prompt,
@@ -1078,10 +1078,10 @@ Return ONLY the JSON object, no markdown code fences, no extra text.
 ARTICLE TO REWRITE:
 {original_text}"""
 
-    print(f"[scraper] Rewriting: '{original_title[:60]}' | Model: gemini-3.1-flash-lite-preview")
+    print(f"[scraper] Rewriting: '{original_title[:60]}' | Model: gemini-2.0-flash-lite")
 
     response = gemini_client.models.generate_content(
-        model="gemini-3.1-flash-lite-preview",
+        model="gemini-2.0-flash-lite",
         contents=prompt,
         config=types.GenerateContentConfig(temperature=0.6),
     )
