@@ -1,5 +1,17 @@
 "use client";
 
+import { useEffect } from "react";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+export function ViewTracker({ slug }: { slug: string }) {
+  useEffect(() => {
+    // Fire-and-forget view increment
+    fetch(`${API_BASE}/api/articles/${slug}/view`, { method: "POST" }).catch(() => {});
+  }, [slug]);
+  return null;
+}
+
 const SENTIMENT_BADGE: Record<string, { cls: string; label: string }> = {
   bullish: { cls: "sentiment-bullish", label: "Bullish" },
   neutral: { cls: "sentiment-neutral", label: "Neutral" },

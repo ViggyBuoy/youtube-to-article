@@ -49,6 +49,7 @@ from database import (
     is_url_seen, insert_seen_url, get_recent_article_titles,
     get_all_tags, get_articles_by_tag,
     get_setting, get_setting_with_timestamp, upsert_setting,
+    increment_view_count, get_editors_choice,
 )
 
 
@@ -1443,6 +1444,24 @@ async def get_author(channel_slug: str):
     if not result:
         raise HTTPException(status_code=404, detail="Author not found")
     return result
+
+
+# ── View Tracking Endpoints ────────────────────────────────────────────────
+
+@app.post("/api/articles/{slug}/view")
+async def record_view(slug: str):
+    count = await increment_view_count(slug)
+    return {"view_count": count}
+
+
+@app.get("/api/editors-choice")
+async def editors_choice():
+    from starlette.responses import JSONResponse as SJSONResponse
+    article = await get_editors_choice(hours=48)
+    return SJSONResponse(
+        content={"article": article},
+        headers={"Cache-Control": "public, s-maxage=60, stale-while-revalidate=120"},
+    )
 
 
 # ── Tags Endpoints ──────────────────────────────────────────────────────────

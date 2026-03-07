@@ -128,6 +128,12 @@ async def init_db():
         )
         print(f"[db] Sentiment columns verified")
 
+        # ── View count column migration ──
+        await conn.execute(
+            "ALTER TABLE articles ADD COLUMN IF NOT EXISTS view_count INTEGER NOT NULL DEFAULT 0"
+        )
+        print(f"[db] View count column verified")
+
         # ── Settings table (key-value store) ──
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -368,6 +374,33 @@ async def get_recent_article_titles(hours: int = 24) -> list[str]:
             cutoff,
         )
         return [row["title"] for row in rows]
+
+
+# ── View Tracking ──────────────────────────────────────────────────────────
+
+async def increment_view_count(slug: str) -> int:
+    """Increment view count for an article. Returns updated count."""
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "UPDATE articles SET view_count = view_count + 1 WHERE slug = $1 RETURNING view_count",
+            slug,
+        )
+        return row["view_count"] if row else 0
+
+
+async def get_editors_choice(hours: int = 48) -> dict | None:
+    """Get the article with the highest views in the last N hours."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, slug, title, meta_description, channel, channel_slug, "
+            "channel_avatar, thumbnail, duration, language, tags, "
+            "sentiment, sentiment_score, view_count, created_at "
+            "FROM articles WHERE created_at >= $1 "
+            "ORDER BY view_count DESC, created_at DESC LIMIT 1",
+            cutoff,
+        )
+        return _row_to_dict(row) if row else None
 
 
 # ── Tags ────────────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Metadata } from "next";
-import { LocalDate, SentimentGaugeClient } from "./client-parts";
+import { LocalDate, SentimentGaugeClient, ViewTracker } from "./client-parts";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
@@ -115,6 +115,7 @@ export default async function ArticlePage({ params }: PageProps) {
 
   return (
     <div className="cp-page">
+      <ViewTracker slug={article.slug} />
       <Link href="/" className="back-btn">
         &larr; All Articles
       </Link>

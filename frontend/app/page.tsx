@@ -160,6 +160,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [tags, setTags] = useState<{ name: string; count: number }[]>([]);
   const [coins, setCoins] = useState<Coin[]>([]);
+  const [editorsChoice, setEditorsChoice] = useState<Article | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -176,6 +177,11 @@ export default function HomePage() {
       .then((r) => (r.ok ? r.json() : { tags: [] }))
       .then((d) => setTags((d.tags || []).slice(0, 15)))
       .catch(() => setTags([]));
+
+    fetch(`${API_BASE}/api/editors-choice`)
+      .then((r) => (r.ok ? r.json() : { article: null }))
+      .then((d) => setEditorsChoice(d.article || null))
+      .catch(() => setEditorsChoice(null));
 
     fetch(
       "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=20&page=1&sparkline=false"
@@ -207,11 +213,6 @@ export default function HomePage() {
   const sideList = filtered.slice(1, 5);
   const gridArticles = filtered.slice(5);
 
-  const sentimentCounts = articles.reduce<Record<string, number>>((acc, a) => {
-    const s = a.sentiment || "neutral";
-    acc[s] = (acc[s] || 0) + 1;
-    return acc;
-  }, {});
 
   if (loading) {
     return (
@@ -462,48 +463,40 @@ export default function HomePage() {
 
         {/* ─── RIGHT SIDEBAR ─── */}
         <aside className="cd-right">
-          <div className="cd-stats">
-            <h4 className="cd-stats-head">Article Stats</h4>
-            <div className="cd-stat-row">
-              <span>Total Articles</span>
-              <strong>{articles.length}</strong>
-            </div>
-            {Object.entries(sentimentCounts).map(([sentiment, count]) => (
-              <div key={sentiment} className="cd-stat-row">
-                <span className={`cd-sentiment-pill ${SENTIMENT_BADGE[sentiment]?.cls || ""}`}>
-                  {SENTIMENT_BADGE[sentiment]?.label || sentiment}
-                </span>
-                <strong>{count}</strong>
-              </div>
-            ))}
+          {/* ── Newsletter Subscribe ── */}
+          <div className="cd-newsletter">
+            <div className="cd-newsletter-icon">&#9993;</div>
+            <h4 className="cd-newsletter-title">Stay Ahead of the Market</h4>
+            <p className="cd-newsletter-desc">
+              Get the latest crypto, forex &amp; market insights delivered to your inbox every morning.
+            </p>
+            <form className="cd-newsletter-form" onSubmit={(e) => e.preventDefault()}>
+              <input
+                type="email"
+                placeholder="Enter your email"
+                className="cd-newsletter-input"
+                required
+              />
+              <button type="submit" className="cd-newsletter-btn">Subscribe</button>
+            </form>
+            <p className="cd-newsletter-fine">Free. No spam. Unsubscribe anytime.</p>
           </div>
 
-          {tags.length > 0 && (
-            <div className="cd-tags-section">
-              <h4 className="cd-stats-head">Popular Tags</h4>
-              <div className="cd-tags-cloud">
-                {tags.map((t) => (
-                  <Link
-                    key={t.name}
-                    href={`/tags/${t.name}`}
-                    className="cd-tag-pill"
-                  >
-                    {t.name} <span className="cd-tag-count">{t.count}</span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {articles[0] && (
-            <div className="cd-highlight">
-              <h4 className="cd-stats-head">Latest Published</h4>
+          {/* ── Editor's Choice ── */}
+          {editorsChoice && (
+            <div className="cd-editors-choice">
+              <h4 className="cd-stats-head">Editor&apos;s Choice</h4>
               <Link
-                href={articleUrl(articles[0])}
+                href={articleUrl(editorsChoice)}
                 className="cd-highlight-card"
               >
-                <img src={articles[0].thumbnail} alt={articles[0].title} />
-                <h5>{articles[0].title}</h5>
+                <img src={editorsChoice.thumbnail} alt={editorsChoice.title} />
+                <h5>{editorsChoice.title}</h5>
+                <div className="cd-card-meta" style={{ marginTop: 8 }}>
+                  <span className="cd-card-author">{editorsChoice.channel}</span>
+                  <span className="cd-card-date">{formatTime(editorsChoice.created_at)}</span>
+                </div>
+                <SentimentGauge sentiment={editorsChoice.sentiment || "neutral"} score={editorsChoice.sentiment_score ?? 50} />
               </Link>
             </div>
           )}
