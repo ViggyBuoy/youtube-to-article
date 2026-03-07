@@ -117,8 +117,32 @@ async def global_exception_handler(request: Request, exc: Exception):
 ASSEMBLYAI_KEY = os.environ.get("ASSEMBLYAI_API_KEY", "")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 
-# Configure Gemini client
-gemini_client = genai.Client(api_key=GEMINI_KEY)
+# Configure Gemini client — prefer Vertex AI (uses GCP credits), fall back to API key
+GCP_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+GCP_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+
+# On Render/Railway: paste the service-account JSON as GOOGLE_CREDENTIALS_JSON env var.
+# The code writes it to a temp file so the Google SDK can find it automatically.
+_creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
+if _creds_json and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+    _creds_path = "/tmp/gcp-sa-key.json"
+    with open(_creds_path, "w") as f:
+        f.write(_creds_json)
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _creds_path
+    print(f"[init] Wrote service-account key to {_creds_path}")
+
+if GCP_PROJECT:
+    # Vertex AI mode: uses $300 GCP credits & service account auth
+    gemini_client = genai.Client(
+        vertexai=True,
+        project=GCP_PROJECT,
+        location=GCP_LOCATION,
+    )
+    print(f"[init] Gemini: Vertex AI mode (project={GCP_PROJECT}, location={GCP_LOCATION})")
+else:
+    # AI Studio mode: uses API key (free tier limits apply)
+    gemini_client = genai.Client(api_key=GEMINI_KEY)
+    print(f"[init] Gemini: AI Studio mode (API key)")
 
 # 10 fixed writer accounts — articles are distributed round-robin
 _AMERICAN_AUTHOR_NAMES = [
