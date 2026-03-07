@@ -365,6 +365,15 @@ body {
 }
 
 /* ── Markdown Tables ── */
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 24px 0;
+}
+.table-wrap table {
+  margin: 0;
+}
 .article-text table {
   width: 100%;
   border-collapse: collapse;

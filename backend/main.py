@@ -32,6 +32,7 @@ except ImportError as e:
     print(f"[init] WARNING: Scraper dependencies missing ({e}), scraper disabled")
     SCRAPER_AVAILABLE = False
 from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -631,7 +632,11 @@ To ensure this article is picked up by AI and Search Engines, you must:
    - DeFi metrics: https://defillama.com/protocol/aave
    - On-chain data: reference Glassnode, Dune Analytics, etc.
    Example: "**Bitcoin dominance hit 58%** according to [CoinMarketCap](https://coinmarketcap.com/charts/#dominance-percentage)"
-4. Structured Data: Convert any comparisons, lists of steps, or numerical data from the transcript into a Markdown Table or Bullet Points for AI readability.
+4. Structured Data: Convert any comparisons, lists of steps, or numerical data from the transcript into a proper GFM Markdown Table or Bullet Points for AI readability. Tables MUST use pipe (|) syntax with header separator (|---|), like:
+   | Token | Price | Change |
+   |-------|-------|--------|
+   | BTC   | $60k  | +5%    |
+   NEVER output tables as plain text, tab-separated, or space-aligned. Always use proper markdown pipe tables.
 
 PHASE 3: THE ARTICLE STRUCTURE (800-1200 Words)
 * The "H1" Headline: A bold, citable headline containing the primary SEO keyword and the influencer's main stance. The title MUST end with " | {channel}" to credit the creator (e.g., "Bitcoin Bull Run Analysis | Raoul Pal").
@@ -990,7 +995,7 @@ SEO OPTIMIZATION:
    - On-chain: reference Glassnode, Dune Analytics, etc.
    Example: "**Bitcoin surged past $70,000** according to [CoinMarketCap](https://coinmarketcap.com/currencies/bitcoin/)"
 3. {source_link_instruction}
-4. Structured Data: Convert comparisons, lists, or numerical data into Markdown Tables or Bullet Points
+4. Structured Data: Convert comparisons, lists, or numerical data into proper GFM Markdown Tables (pipe | syntax with |---| header separator) or Bullet Points. NEVER use plain text or space-aligned tables
 5. **Bold** all key data points, statistics, and numbers
 
 ARTICLE STRUCTURE (600-1000 Words):
@@ -1395,6 +1400,35 @@ async def get_article(slug: str):
         content=article,
         headers={"Cache-Control": "public, s-maxage=60, stale-while-revalidate=120"},
     )
+
+
+@app.get("/api/og-image/{slug}")
+async def get_og_image(slug: str):
+    """Serve article thumbnail as a real image for social media OG previews.
+    Decodes base64 data URLs; redirects external URLs."""
+    article = await get_article_by_slug(slug)
+    if not article or not article.get("thumbnail"):
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+    thumb = article["thumbnail"]
+    if thumb.startswith("data:"):
+        # Parse data URL: data:image/jpeg;base64,/9j/4AAQ...
+        try:
+            header, b64data = thumb.split(",", 1)
+            mime = header.split(":")[1].split(";")[0]
+            img_bytes = base64.b64decode(b64data)
+            return Response(
+                content=img_bytes,
+                media_type=mime,
+                headers={
+                    "Cache-Control": "public, max-age=86400, s-maxage=604800",
+                    "Content-Disposition": "inline",
+                },
+            )
+        except Exception:
+            raise HTTPException(status_code=500, detail="Failed to decode thumbnail")
+    # External URL — redirect
+    from starlette.responses import RedirectResponse
+    return RedirectResponse(url=thumb, status_code=302)
 
 
 @app.get("/api/authors")

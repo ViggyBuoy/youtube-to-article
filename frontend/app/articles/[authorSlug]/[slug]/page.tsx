@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Metadata } from "next";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -32,6 +33,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     if (res.ok) {
       const article = await res.json();
       const articleUrl = `${SITE_URL}/articles/${authorSlug}/${slug}`;
+      // Use /api/og-image endpoint for social previews (base64 data URLs don't work for OG)
+      const ogImageUrl = article.thumbnail?.startsWith("data:")
+        ? `${API_BASE}/api/og-image/${slug}`
+        : article.thumbnail;
       return {
         title: `${article.title} | CryptoDailyInk`,
         description: article.meta_description || article.title,
@@ -40,10 +45,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
           description: article.meta_description || article.title,
           url: articleUrl,
           siteName: "CryptoDailyInk",
-          images: article.thumbnail
+          images: ogImageUrl
             ? [
                 {
-                  url: article.thumbnail,
+                  url: ogImageUrl,
                   width: 1200,
                   height: 630,
                   alt: article.title,
@@ -58,7 +63,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
           card: "summary_large_image",
           title: article.title,
           description: article.meta_description || article.title,
-          images: article.thumbnail ? [article.thumbnail] : [],
+          images: ogImageUrl ? [ogImageUrl] : [],
         },
       };
     }
@@ -169,11 +174,17 @@ export default async function ArticlePage({ params }: PageProps) {
 
           <div className="article-text">
             <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
               components={{
                 a: ({ href, children }) => (
                   <a href={href} target="_blank" rel="noopener noreferrer">
                     {children}
                   </a>
+                ),
+                table: ({ children }) => (
+                  <div className="table-wrap">
+                    <table>{children}</table>
+                  </div>
                 ),
               }}
             >
