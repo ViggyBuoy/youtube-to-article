@@ -228,9 +228,10 @@ export default function HomePage() {
 
   const featured = filtered[0] || null;
   const sideList = isMobile ? [] : filtered.slice(1, 6);
-  const gridArticles = isMobile ? filtered.slice(1) : filtered.slice(6);
+  const gridArticles = isMobile ? filtered.slice(1, 5) : filtered.slice(6);
   const visibleGrid = gridArticles.slice(0, gridVisible);
   const hasMoreGrid = gridVisible < gridArticles.length;
+  const mobileCompactList = isMobile ? filtered.slice(5, 10) : [];
 
   // Reset grid pagination on category/search/viewport change
   useEffect(() => {
@@ -521,6 +522,32 @@ export default function HomePage() {
               >
                 View More
               </button>
+            </div>
+          )}
+
+          {/* ─── MOBILE COMPACT LIST — thumbnail left, title right ─── */}
+          {mobileCompactList.length > 0 && (
+            <div className="cd-compact-section">
+              <h3 className="cd-compact-heading">More Stories</h3>
+              {mobileCompactList.map((a) => (
+                <Link
+                  key={`compact-${a.slug}`}
+                  href={articleUrl(a)}
+                  className="cd-compact-item cd-reveal"
+                >
+                  <div className="cd-compact-thumb">
+                    <img src={a.thumbnail} alt={a.title} loading="lazy" />
+                  </div>
+                  <div className="cd-compact-body">
+                    <h4 className="cd-compact-title">{a.title}</h4>
+                    <div className="cd-card-meta">
+                      <span className="cd-card-author">{a.channel}</span>
+                      <span className="cd-card-date">{formatTime(a.created_at)}</span>
+                      <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
+                    </div>
+                  </div>
+                </Link>
+              ))}
             </div>
           )}
 

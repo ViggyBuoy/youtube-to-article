@@ -1656,6 +1656,76 @@ body {
   .cd-scroll-title {
     font-size: 13px;
   }
+
+  /* ── Mobile compact list spacing ── */
+  .cd-compact-section {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid var(--cp-gray-200);
+  }
+}
+
+/* ── Compact list: hidden on desktop, visible on mobile ── */
+.cd-compact-section {
+  display: none;
+}
+@media (max-width: 900px) {
+  .cd-compact-section {
+    display: block;
+  }
+}
+.cd-compact-section .cd-compact-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--cp-gray-100);
+  text-decoration: none;
+  color: inherit;
+}
+.cd-compact-section .cd-compact-item:last-child {
+  border-bottom: none;
+}
+.cd-compact-section .cd-compact-thumb {
+  flex-shrink: 0;
+  width: 96px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.cd-compact-section .cd-compact-thumb img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  display: block;
+  border-radius: 6px;
+}
+.cd-compact-section .cd-compact-body {
+  flex: 1;
+  min-width: 0;
+}
+.cd-compact-section .cd-compact-title {
+  font-family: var(--cp-serif);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--cp-black);
+  margin-bottom: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cd-compact-section .cd-compact-item .cd-card-meta {
+  font-size: 10px;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cd-compact-heading {
+  font-family: var(--cp-serif);
+  font-size: 16px;
+  font-weight: 800;
+  margin-bottom: 16px;
+  color: var(--cp-black);
 }
 
 /* ── Author link ── */
