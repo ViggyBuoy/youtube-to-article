@@ -416,11 +416,22 @@ body {
 }
 /* Table responsive wrapper on mobile */
 @media (max-width: 768px) {
-  .article-text table {
-    display: block;
+  .table-wrap {
+    max-width: 100%;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    white-space: nowrap;
+  }
+  .article-text table {
+    min-width: 100%;
+    table-layout: fixed;
+  }
+  .article-text th,
+  .article-text td {
+    white-space: normal;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    padding: 8px 10px;
+    font-size: 13px;
   }
 }
 

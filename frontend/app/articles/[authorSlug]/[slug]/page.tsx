@@ -261,7 +261,7 @@ export default async function ArticlePage({ params }: PageProps) {
             </ReactMarkdown>
           </div>
 
-          {article.duration > 0 && article.youtube_url && (() => {
+          {article.youtube_url && (() => {
             const videoId = extractYouTubeId(article.youtube_url);
             return videoId ? (
               <div className="ap-video-section">
@@ -310,12 +310,14 @@ export default async function ArticlePage({ params }: PageProps) {
                 {sentimentInfo.label} ({sentimentScore})
               </span>
             </div>
-            <div className="ap-detail-row">
-              <span className="ap-detail-label">Duration</span>
-              <span className="ap-detail-value">
-                {Math.floor(article.duration / 60)}:{String(article.duration % 60).padStart(2, "0")}
-              </span>
-            </div>
+            {article.duration > 0 && (
+              <div className="ap-detail-row">
+                <span className="ap-detail-label">Duration</span>
+                <span className="ap-detail-value">
+                  {Math.floor(article.duration / 60)}:{String(article.duration % 60).padStart(2, "0")}
+                </span>
+              </div>
+            )}
             <div className="ap-detail-row">
               <span className="ap-detail-label">Published</span>
               <span className="ap-detail-value"><LocalDate dateStr={article.created_at} /></span>

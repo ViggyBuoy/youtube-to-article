@@ -427,6 +427,22 @@ def _fetch_metadata(url: str, video_id: str) -> dict:
         print(f"[metadata] oEmbed failed: {e}")
         if video_id:
             metadata["thumbnail"] = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+
+    # Fetch video duration via yt-dlp info extraction (no download)
+    if not metadata["duration"] and video_id:
+        try:
+            with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True}) as ydl:
+                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                metadata["duration"] = info.get("duration", 0) or 0
+                # Backfill any missing fields from yt-dlp
+                if not metadata["title"]:
+                    metadata["title"] = info.get("title", "")
+                if not metadata["channel"]:
+                    metadata["channel"] = info.get("uploader", info.get("channel", ""))
+                print(f"[metadata] yt-dlp duration: {metadata['duration']}s")
+        except Exception as e:
+            print(f"[metadata] yt-dlp duration fetch failed: {e}")
+
     return metadata
 
 
