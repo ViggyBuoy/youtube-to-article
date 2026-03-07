@@ -119,7 +119,7 @@ GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # Configure Gemini client — prefer Vertex AI (uses GCP credits), fall back to API key
 GCP_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
-GCP_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
+GCP_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
 
 # On Render/Railway: paste the service-account JSON as GOOGLE_CREDENTIALS_JSON env var.
 # The code writes it to a temp file so the Google SDK can find it automatically.
