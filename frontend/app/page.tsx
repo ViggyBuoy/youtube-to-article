@@ -366,8 +366,13 @@ export default function HomePage() {
                       href={articleUrl(a)}
                       className="cd-side-item"
                     >
-                      <SentimentMeter sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
-                      <h4 className="cd-side-title">{a.title}</h4>
+                      <div className="cd-side-thumb">
+                        <img src={a.thumbnail} alt={a.title} />
+                      </div>
+                      <div className="cd-side-body">
+                        <SentimentMeter sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
+                        <h4 className="cd-side-title">{a.title}</h4>
+                      </div>
                     </Link>
                   ))}
                 </div>
