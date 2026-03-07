@@ -42,7 +42,8 @@ from PIL import Image
 from database import (
     init_db, close_db, insert_article, get_all_articles, get_article_by_slug,
     get_all_channels, get_articles_by_channel_slug, generate_channel_slug,
-    update_article, delete_article,
+    update_article, delete_article, delete_articles_bulk,
+    delete_author, delete_authors_bulk,
     insert_source, get_all_sources, toggle_source, delete_source,
     is_url_seen, insert_seen_url, get_recent_article_titles,
     get_all_tags, get_articles_by_tag,
@@ -1432,6 +1433,41 @@ async def admin_delete_article(slug: str, user: str = Depends(_verify_admin_toke
     if not deleted:
         raise HTTPException(status_code=404, detail="Article not found")
     return {"deleted": True}
+
+
+class BulkDeleteRequest(BaseModel):
+    slugs: list[str]
+
+
+@app.post("/api/admin/articles/bulk-delete")
+async def admin_bulk_delete_articles(req: BulkDeleteRequest, user: str = Depends(_verify_admin_token)):
+    """Delete multiple articles by their slugs."""
+    if not req.slugs:
+        raise HTTPException(status_code=400, detail="No slugs provided")
+    count = await delete_articles_bulk(req.slugs)
+    return {"deleted_count": count}
+
+
+@app.delete("/api/admin/authors/{channel_slug}")
+async def admin_delete_author(channel_slug: str, user: str = Depends(_verify_admin_token)):
+    """Delete all articles by an author (channel_slug)."""
+    count = await delete_author(channel_slug)
+    if count == 0:
+        raise HTTPException(status_code=404, detail="Author not found or has no articles")
+    return {"deleted_count": count}
+
+
+class BulkDeleteAuthorsRequest(BaseModel):
+    channel_slugs: list[str]
+
+
+@app.post("/api/admin/authors/bulk-delete")
+async def admin_bulk_delete_authors(req: BulkDeleteAuthorsRequest, user: str = Depends(_verify_admin_token)):
+    """Delete all articles for multiple authors."""
+    if not req.channel_slugs:
+        raise HTTPException(status_code=400, detail="No authors provided")
+    count = await delete_authors_bulk(req.channel_slugs)
+    return {"deleted_count": count}
 
 
 # ── Admin Source Endpoints ───────────────────────────────────────────────────

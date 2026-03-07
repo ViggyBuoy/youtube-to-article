@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -155,7 +155,6 @@ function AdminDashboard({
   onLogout: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<"articles" | "sources" | "settings">("articles");
-  const [authors, setAuthors] = useState<Author[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
   const [sources, setSources] = useState<Source[]>([]);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
@@ -163,6 +162,15 @@ function AdminDashboard({
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState("");
+
+  // Search + selection state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+  const [authorDeleteConfirm, setAuthorDeleteConfirm] = useState<string | null>(null);
+  const [selectedAuthorSlugs, setSelectedAuthorSlugs] = useState<Set<string>>(new Set());
+  const [bulkAuthorDeleteConfirm, setBulkAuthorDeleteConfirm] = useState(false);
 
   // Cookie / Settings state
   const [cookieStatus, setCookieStatus] = useState<{
@@ -185,15 +193,66 @@ function AdminDashboard({
   const [scraperLog, setScraperLog] = useState<{time: string; level: string; msg: string}[]>([]);
   const [showLog, setShowLog] = useState(false);
 
+  // Derive author list from articles (always up-to-date)
+  const computedAuthors = useMemo(() => {
+    const map = new Map<string, Author>();
+    for (const a of articles) {
+      if (!a.channel_slug) continue;
+      const existing = map.get(a.channel_slug);
+      if (existing) {
+        existing.article_count++;
+      } else {
+        map.set(a.channel_slug, {
+          channel: a.channel,
+          channel_slug: a.channel_slug,
+          channel_avatar: a.channel_avatar || "",
+          article_count: 1,
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.article_count - a.article_count);
+  }, [articles]);
+
+  // Filter + search articles
+  const filteredArticles = useMemo(() => {
+    let list = selectedAuthor
+      ? articles.filter((a) => a.channel_slug === selectedAuthor)
+      : articles;
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        (a) =>
+          a.title.toLowerCase().includes(q) ||
+          a.channel.toLowerCase().includes(q) ||
+          a.slug.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [articles, selectedAuthor, searchQuery]);
+
+  const selectedAuthorData = selectedAuthor
+    ? computedAuthors.find((a) => a.channel_slug === selectedAuthor)
+    : null;
+
+  const allVisibleSelected =
+    filteredArticles.length > 0 &&
+    filteredArticles.every((a) => selectedSlugs.has(a.slug));
+
   useEffect(() => {
     loadData();
   }, []);
 
+  // Clear selection when search/filter changes
+  useEffect(() => {
+    setSelectedSlugs(new Set());
+    setBulkDeleteConfirm(false);
+  }, [searchQuery, selectedAuthor]);
+
   async function loadData() {
     setLoading(true);
     try {
-      const [authorsRes, articlesRes, sourcesRes, cookiesRes] = await Promise.all([
-        fetch(`${API_BASE}/api/authors`),
+      const [articlesRes, sourcesRes, cookiesRes] = await Promise.all([
         fetch(`${API_BASE}/api/admin/articles`, {
           headers: authHeaders(token),
         }),
@@ -205,10 +264,6 @@ function AdminDashboard({
         }),
       ]);
 
-      if (authorsRes.ok) {
-        const d = await authorsRes.json();
-        setAuthors(d.authors || []);
-      }
       if (articlesRes.ok) {
         const d = await articlesRes.json();
         setArticles(d.articles || []);
@@ -254,7 +309,6 @@ function AdminDashboard({
         return;
       }
       setCookieText(text.trim());
-      // Auto-save to backend
       setCookieSaving(true);
       const res = await fetch(`${API_BASE}/api/admin/cookies`, {
         method: "POST",
@@ -306,14 +360,7 @@ function AdminDashboard({
     }
   }
 
-  const filteredArticles = selectedAuthor
-    ? articles.filter((a) => a.channel_slug === selectedAuthor)
-    : articles;
-
-  const selectedAuthorData = selectedAuthor
-    ? authors.find((a) => a.channel_slug === selectedAuthor)
-    : null;
-
+  /* ── Article handlers ── */
   async function handleDelete(slug: string) {
     try {
       const res = await fetch(`${API_BASE}/api/admin/articles/${slug}`, {
@@ -323,6 +370,7 @@ function AdminDashboard({
       if (res.ok) {
         setArticles((prev) => prev.filter((a) => a.slug !== slug));
         setDeleteConfirm(null);
+        setSelectedSlugs((prev) => { const n = new Set(prev); n.delete(slug); return n; });
         if (editingArticle?.slug === slug) setEditingArticle(null);
       } else if (res.status === 401) {
         onLogout();
@@ -330,6 +378,100 @@ function AdminDashboard({
     } catch {
       // ignore
     }
+  }
+
+  async function handleBulkDeleteArticles() {
+    if (selectedSlugs.size === 0) return;
+    setBulkDeleting(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/articles/bulk-delete`, {
+        method: "POST",
+        headers: authHeaders(token),
+        body: JSON.stringify({ slugs: Array.from(selectedSlugs) }),
+      });
+      if (res.ok) {
+        setArticles((prev) => prev.filter((a) => !selectedSlugs.has(a.slug)));
+        setSelectedSlugs(new Set());
+        setBulkDeleteConfirm(false);
+      } else if (res.status === 401) {
+        onLogout();
+      }
+    } catch {
+      // ignore
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
+
+  async function handleDeleteAuthor(channelSlug: string) {
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/authors/${channelSlug}`, {
+        method: "DELETE",
+        headers: authHeaders(token),
+      });
+      if (res.ok) {
+        setArticles((prev) => prev.filter((a) => a.channel_slug !== channelSlug));
+        setAuthorDeleteConfirm(null);
+        if (selectedAuthor === channelSlug) setSelectedAuthor(null);
+        setSelectedAuthorSlugs((prev) => { const n = new Set(prev); n.delete(channelSlug); return n; });
+      } else if (res.status === 401) {
+        onLogout();
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleBulkDeleteAuthors() {
+    if (selectedAuthorSlugs.size === 0) return;
+    setBulkDeleting(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/authors/bulk-delete`, {
+        method: "POST",
+        headers: authHeaders(token),
+        body: JSON.stringify({ channel_slugs: Array.from(selectedAuthorSlugs) }),
+      });
+      if (res.ok) {
+        setArticles((prev) => prev.filter((a) => !selectedAuthorSlugs.has(a.channel_slug)));
+        setSelectedAuthorSlugs(new Set());
+        setBulkAuthorDeleteConfirm(false);
+        if (selectedAuthor && selectedAuthorSlugs.has(selectedAuthor)) {
+          setSelectedAuthor(null);
+        }
+      } else if (res.status === 401) {
+        onLogout();
+      }
+    } catch {
+      // ignore
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
+
+  function toggleSelectSlug(slug: string) {
+    setSelectedSlugs((prev) => {
+      const n = new Set(prev);
+      if (n.has(slug)) n.delete(slug);
+      else n.add(slug);
+      return n;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (allVisibleSelected) {
+      setSelectedSlugs(new Set());
+    } else {
+      setSelectedSlugs(new Set(filteredArticles.map((a) => a.slug)));
+    }
+  }
+
+  function toggleSelectAuthor(slug: string) {
+    setSelectedAuthorSlugs((prev) => {
+      const n = new Set(prev);
+      if (n.has(slug)) n.delete(slug);
+      else n.add(slug);
+      return n;
+    });
   }
 
   async function handleSave() {
@@ -393,7 +535,6 @@ function AdminDashboard({
       if (res.ok) {
         setNewSourceName("");
         setNewSourceUrl("");
-        // Reload sources
         const sourcesRes = await fetch(`${API_BASE}/api/admin/sources`, {
           headers: authHeaders(token),
         });
@@ -617,7 +758,38 @@ function AdminDashboard({
           <div className="adm-dashboard">
             {/* Authors sidebar */}
             <div className="adm-authors">
-              <h3 className="adm-section-title">Authors</h3>
+              <div className="adm-authors-header">
+                <h3 className="adm-section-title">Authors</h3>
+                {selectedAuthorSlugs.size > 0 && (
+                  <div className="adm-bulk-bar-mini">
+                    <span className="adm-bulk-count">{selectedAuthorSlugs.size} selected</span>
+                    {bulkAuthorDeleteConfirm ? (
+                      <div className="adm-delete-confirm">
+                        <button
+                          className="adm-btn-delete-yes"
+                          onClick={handleBulkDeleteAuthors}
+                          disabled={bulkDeleting}
+                        >
+                          {bulkDeleting ? "Deleting..." : "Confirm"}
+                        </button>
+                        <button
+                          className="adm-btn-cancel"
+                          onClick={() => setBulkAuthorDeleteConfirm(false)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        className="adm-btn-delete"
+                        onClick={() => setBulkAuthorDeleteConfirm(true)}
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
               <button
                 className={`adm-author-item ${!selectedAuthor ? "adm-author-active" : ""}`}
                 onClick={() => setSelectedAuthor(null)}
@@ -630,36 +802,94 @@ function AdminDashboard({
                   </div>
                 </div>
               </button>
-              {authors.map((a) => (
-                <button
-                  key={a.channel_slug}
-                  className={`adm-author-item ${selectedAuthor === a.channel_slug ? "adm-author-active" : ""}`}
-                  onClick={() => setSelectedAuthor(a.channel_slug)}
-                >
-                  {a.channel_avatar ? (
-                    <img
-                      src={a.channel_avatar}
-                      alt={a.channel}
-                      className="adm-author-avatar-img"
+              {computedAuthors.map((a) => (
+                <div key={a.channel_slug} className="adm-author-row-wrap">
+                  <label
+                    className="adm-author-check"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedAuthorSlugs.has(a.channel_slug)}
+                      onChange={() => toggleSelectAuthor(a.channel_slug)}
                     />
+                  </label>
+                  <button
+                    className={`adm-author-item ${selectedAuthor === a.channel_slug ? "adm-author-active" : ""}`}
+                    onClick={() => setSelectedAuthor(a.channel_slug)}
+                  >
+                    {a.channel_avatar ? (
+                      <img
+                        src={a.channel_avatar}
+                        alt={a.channel}
+                        className="adm-author-avatar-img"
+                      />
+                    ) : (
+                      <div className="adm-author-avatar-sm">
+                        {a.channel.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="adm-author-name">{a.channel}</div>
+                      <div className="adm-author-count">
+                        {a.article_count} article
+                        {a.article_count !== 1 ? "s" : ""}
+                      </div>
+                    </div>
+                  </button>
+                  {authorDeleteConfirm === a.channel_slug ? (
+                    <div className="adm-author-del-confirm">
+                      <button
+                        className="adm-btn-delete-yes"
+                        onClick={() => handleDeleteAuthor(a.channel_slug)}
+                      >
+                        Yes
+                      </button>
+                      <button
+                        className="adm-btn-cancel"
+                        onClick={() => setAuthorDeleteConfirm(null)}
+                      >
+                        No
+                      </button>
+                    </div>
                   ) : (
-                    <div className="adm-author-avatar-sm">
-                      {a.channel.charAt(0).toUpperCase()}
-                    </div>
+                    <button
+                      className="adm-author-del-btn"
+                      onClick={() => setAuthorDeleteConfirm(a.channel_slug)}
+                      title="Delete author and all articles"
+                    >
+                      &times;
+                    </button>
                   )}
-                  <div>
-                    <div className="adm-author-name">{a.channel}</div>
-                    <div className="adm-author-count">
-                      {a.article_count} article
-                      {a.article_count !== 1 ? "s" : ""}
-                    </div>
-                  </div>
-                </button>
+                </div>
               ))}
             </div>
 
             {/* Articles list */}
             <div className="adm-articles">
+              {/* Search bar */}
+              <div className="adm-search-bar">
+                <svg className="adm-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                  <circle cx="11" cy="11" r="8" strokeWidth="2" />
+                  <path d="M21 21l-4.35-4.35" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search articles by title, author, or slug..."
+                  className="adm-search-input"
+                />
+                {searchQuery && (
+                  <button
+                    className="adm-search-clear"
+                    onClick={() => setSearchQuery("")}
+                  >
+                    &times;
+                  </button>
+                )}
+              </div>
+
               <div className="adm-articles-head">
                 <h3 className="adm-section-title">
                   {selectedAuthorData
@@ -671,12 +901,69 @@ function AdminDashboard({
                 </span>
               </div>
 
+              {/* Bulk action bar */}
+              {filteredArticles.length > 0 && (
+                <div className="adm-bulk-bar">
+                  <label className="adm-select-all">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectAll}
+                    />
+                    <span>Select All</span>
+                  </label>
+                  {selectedSlugs.size > 0 && (
+                    <div className="adm-bulk-actions">
+                      <span className="adm-bulk-count">
+                        {selectedSlugs.size} selected
+                      </span>
+                      {bulkDeleteConfirm ? (
+                        <div className="adm-delete-confirm">
+                          <button
+                            className="adm-btn-delete-yes"
+                            onClick={handleBulkDeleteArticles}
+                            disabled={bulkDeleting}
+                          >
+                            {bulkDeleting ? "Deleting..." : `Delete ${selectedSlugs.size}`}
+                          </button>
+                          <button
+                            className="adm-btn-cancel"
+                            onClick={() => setBulkDeleteConfirm(false)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="adm-btn-delete"
+                          onClick={() => setBulkDeleteConfirm(true)}
+                        >
+                          Delete Selected
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {filteredArticles.length === 0 ? (
-                <div className="adm-empty">No articles found</div>
+                <div className="adm-empty">
+                  {searchQuery ? "No articles match your search" : "No articles found"}
+                </div>
               ) : (
                 <div className="adm-articles-list">
                   {filteredArticles.map((a) => (
-                    <div key={a.slug} className="adm-article-row">
+                    <div
+                      key={a.slug}
+                      className={`adm-article-row ${selectedSlugs.has(a.slug) ? "adm-article-selected" : ""}`}
+                    >
+                      <label className="adm-article-check">
+                        <input
+                          type="checkbox"
+                          checked={selectedSlugs.has(a.slug)}
+                          onChange={() => toggleSelectSlug(a.slug)}
+                        />
+                      </label>
                       <div className="adm-article-thumb">
                         <img src={a.thumbnail} alt={a.title} />
                       </div>

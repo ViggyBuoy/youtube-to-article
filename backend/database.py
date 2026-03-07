@@ -260,6 +260,38 @@ async def delete_article(slug: str) -> bool:
         return result != "DELETE 0"
 
 
+async def delete_articles_bulk(slugs: list[str]) -> int:
+    """Delete multiple articles by slug. Returns count of deleted."""
+    if not slugs:
+        return 0
+    async with _pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM articles WHERE slug = ANY($1::text[])", slugs
+        )
+        # result is like "DELETE 5"
+        return int(result.split()[-1])
+
+
+async def delete_author(channel_slug: str) -> int:
+    """Delete all articles for a given channel_slug. Returns count deleted."""
+    async with _pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM articles WHERE channel_slug = $1", channel_slug
+        )
+        return int(result.split()[-1])
+
+
+async def delete_authors_bulk(channel_slugs: list[str]) -> int:
+    """Delete all articles for multiple authors. Returns count deleted."""
+    if not channel_slugs:
+        return 0
+    async with _pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM articles WHERE channel_slug = ANY($1::text[])", channel_slugs
+        )
+        return int(result.split()[-1])
+
+
 # ── Sources CRUD ─────────────────────────────────────────────────────────────
 
 async def insert_source(name: str, rss_url: str) -> dict:
