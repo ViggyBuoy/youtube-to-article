@@ -4,7 +4,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:path*",
+        // Only block indexing on the private converter page
+        source: "/app",
         headers: [
           { key: "X-Robots-Tag", value: "noindex, nofollow" },
         ],

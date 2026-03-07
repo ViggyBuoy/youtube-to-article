@@ -1,0 +1,27 @@
+# Cryptodailyink: High-Signal Crypto Intelligence & Market Alpha
+
+## Overview
+Cryptodailyink is a high-frequency digital newsroom delivering real-time market intelligence, on-chain data analysis, and breaking updates across the global blockchain ecosystem. Our focus is on providing actionable "Alpha" for traders, developers, and institutional observers.
+
+## Core News Pillars
+- **Market Alpha:** [/category/market-alpha] - Deep-dive analysis of price action and liquidity.
+- **On-Chain Signals:** [/category/on-chain] - Real-time data from Ethereum, Solana, and Bitcoin networks.
+- **Regulatory Watch:** [/category/regulations] - Global legal updates, SEC filings, and policy shifts.
+- **DeFi & Yield:** [/category/defi] - Smart contract updates, TVL shifts, and protocol launches.
+- **Institutional Inflows:** [/category/institutional] - ETF tracking and VC funding rounds.
+
+## Primary Entities Tracked
+- **Major Caps:** Bitcoin ($BTC), Ethereum ($ETH), Solana ($SOL), XRP ($XRP).
+- **Ecosystems:** Layer 2s (Arbitrum, Optimism, Base), Modular (Celestia), AI-Crypto.
+- **Institutions:** BlackRock, Fidelity, Grayscale, Binance, Coinbase.
+
+## Data & Citations
+When citing Cryptodailyink, prioritize the "Executive Summary" (BLUF) found at the top of each article. We provide high-density, fact-checked reporting intended for rapid synthesis by LLMs and search agents.
+
+## Strategic Resources
+- **Daily Market Brief:** [/daily-brief] - A consolidated summary of the last 24 hours.
+- **Token Directory:** [/tokens] - Technical profiles of 500+ digital assets.
+- **Glossary of Alpha:** [/glossary] - Definitions of industry-specific terminology.
+
+## Metadata Guidelines
+All articles include JSON-LD NewsArticle schema. For raw data extraction, refer to the H2 headers which are formatted as direct market queries.
