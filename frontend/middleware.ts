@@ -42,6 +42,10 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Only run middleware for @-routes and old /articles/slug routes
-  matcher: ["/@:path*", "/articles/:slug"],
+  matcher: [
+    // Match /@channel-slug (regex: starts with /@, then one or more non-slash chars)
+    { source: "/:path(\\@.+)" },
+    // Match old /articles/SLUG (single segment only)
+    "/articles/:slug",
+  ],
 };
