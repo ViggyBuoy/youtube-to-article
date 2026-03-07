@@ -98,7 +98,7 @@ export default function AdminPanel() {
         <div className="adm-login-page">
           <div className="adm-login-card">
             <div className="adm-login-brand">
-              Chain<span style={{ color: "var(--cp-accent)" }}>.</span>Pulse
+              CryptoDaily<span style={{ color: "var(--cp-accent)" }}>Ink</span>
             </div>
             <h1 className="adm-login-title">Admin Login</h1>
             <p className="adm-login-sub">
@@ -710,7 +710,7 @@ function AdminDashboard({
         {/* Top bar */}
         <div className="adm-topbar">
           <div className="adm-brand">
-            Chain<span style={{ color: "var(--cp-accent)" }}>.</span>Pulse
+            CryptoDaily<span style={{ color: "var(--cp-accent)" }}>Ink</span>
             <span className="adm-badge">Admin</span>
           </div>
           <button className="adm-logout-btn" onClick={onLogout}>

@@ -19,7 +19,7 @@ export default function Navbar() {
       <div className="cp-navbar-inner">
         {/* Left: Brand */}
         <Link href="/" className="cp-navbar-brand">
-          Chain<span className="cp-brand-dot">.</span>Pulse
+          CryptoDaily<span className="cp-brand-dot">Ink</span>
         </Link>
 
         {/* Center: Desktop tabs */}

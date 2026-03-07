@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ChainPulse",
+  title: "CryptoDailyInk",
   description: "Crypto, Forex & Market News — Powered by AI",
 };
 

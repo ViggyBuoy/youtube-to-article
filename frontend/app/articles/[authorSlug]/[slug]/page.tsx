@@ -33,13 +33,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       const article = await res.json();
       const articleUrl = `${SITE_URL}/articles/${authorSlug}/${slug}`;
       return {
-        title: `${article.title} | ChainPulse`,
+        title: `${article.title} | CryptoDailyInk`,
         description: article.meta_description || article.title,
         openGraph: {
           title: article.title,
           description: article.meta_description || article.title,
           url: articleUrl,
-          siteName: "ChainPulse",
+          siteName: "CryptoDailyInk",
           images: article.thumbnail
             ? [
                 {
@@ -66,7 +66,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     // Fallback
   }
   return {
-    title: "Article | ChainPulse",
+    title: "Article | CryptoDailyInk",
     description: "Crypto, Forex & Market News — Powered by AI",
   };
 }
@@ -278,7 +278,7 @@ export default async function ArticlePage({ params }: PageProps) {
 
       <footer className="cd-footer">
         <div className="cd-footer-brand">
-          Chain<span style={{ color: "var(--cp-accent)" }}>.</span>Pulse
+          CryptoDaily<span style={{ color: "var(--cp-accent)" }}>Ink</span>
         </div>
         <p className="cd-footer-sub">Powered by YouTube to Article</p>
       </footer>
