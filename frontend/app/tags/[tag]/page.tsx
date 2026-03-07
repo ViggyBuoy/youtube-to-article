@@ -77,8 +77,8 @@ export default async function TagPage({ params }: PageProps) {
                         </Link>
                       </span>
                       {a.created_at && <LocalDate dateStr={a.created_at} />}
+                      <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                     </div>
-                    <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                   </div>
                 </Link>
               );

@@ -447,19 +447,21 @@ export default function HomePage() {
                   <div className="cd-grid-img">
                     <img src={a.thumbnail} alt={a.title} />
                   </div>
-                  <h4 className="cd-grid-title">{a.title}</h4>
-                  <div className="cd-card-meta">
-                    <span className="cd-card-author">
-                      <Link
-                        href={`/@${a.channel_slug}`}
-                        className="cd-author-link"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {a.channel}
-                      </Link>
-                    </span>
-                    <span className="cd-card-date">{formatTime(a.created_at)}</span>
-                    <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
+                  <div className="cd-grid-body">
+                    <h4 className="cd-grid-title">{a.title}</h4>
+                    <div className="cd-card-meta">
+                      <span className="cd-card-author">
+                        <Link
+                          href={`/@${a.channel_slug}`}
+                          className="cd-author-link"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {a.channel}
+                        </Link>
+                      </span>
+                      <span className="cd-card-date">{formatTime(a.created_at)}</span>
+                      <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
+                    </div>
                   </div>
                 </Link>
               ))}
