@@ -26,7 +26,7 @@ export default function UrlForm({ onSubmit, loading }: UrlFormProps) {
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="Paste a YouTube URL..."
-          className="flex-1 rounded-xl bg-white/10 border border-white/20 px-5 py-3.5 text-white placeholder-white/40 outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-colors"
+          className="flex-1 rounded-xl bg-white border border-gray-300 px-5 py-3.5 text-gray-900 placeholder-gray-400 outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-colors"
         />
         <button
           type="submit"
@@ -59,7 +59,7 @@ export default function UrlForm({ onSubmit, loading }: UrlFormProps) {
         </button>
       </div>
       <div className="flex items-center gap-3">
-        <span className="text-white/40 text-sm">Language:</span>
+        <span className="text-gray-500 text-sm">Language:</span>
         <LanguageSelect value={language} onChange={setLanguage} disabled={loading} />
       </div>
     </form>

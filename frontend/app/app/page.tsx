@@ -127,10 +127,10 @@ export default function ConverterPage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-8 p-6">
       <div className="text-center mb-2">
-        <h1 className="text-4xl font-bold text-white tracking-tight">
+        <h1 className="text-4xl font-bold text-gray-900 tracking-tight">
           YouTube to Article
         </h1>
-        <p className="text-white/50 mt-2">
+        <p className="text-gray-500 mt-2">
           Turn any YouTube video into an SEO-optimized blog article
         </p>
       </div>
@@ -153,9 +153,9 @@ export default function ConverterPage() {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                   </svg>
                 ) : (
-                  <div className="w-5 h-5 rounded-full border-2 border-white/20 flex-shrink-0" />
+                  <div className="w-5 h-5 rounded-full border-2 border-gray-300 flex-shrink-0" />
                 )}
-                <span className={`text-sm ${i <= step ? "text-white" : "text-white/30"}`}>
+                <span className={`text-sm ${i <= step ? "text-gray-900" : "text-gray-400"}`}>
                   {label}
                 </span>
               </div>
@@ -165,7 +165,7 @@ export default function ConverterPage() {
       )}
 
       {error && (
-        <div className="w-full max-w-2xl bg-red-500/10 border border-red-500/30 rounded-xl px-5 py-3 text-red-400 text-sm">
+        <div className="w-full max-w-2xl bg-red-50 border border-red-200 rounded-xl px-5 py-3 text-red-600 text-sm">
           {error}
         </div>
       )}

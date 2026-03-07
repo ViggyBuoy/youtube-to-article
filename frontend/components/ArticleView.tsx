@@ -60,12 +60,12 @@ export default function ArticleView({
           className="w-24 h-16 rounded-lg object-cover flex-shrink-0"
         />
         <div className="min-w-0">
-          <h2 className="text-white font-semibold leading-snug line-clamp-2">
+          <h2 className="text-gray-900 font-semibold leading-snug line-clamp-2">
             {metadata.title}
           </h2>
           <div className="flex items-center gap-2 mt-1">
-            <p className="text-white/50 text-sm">{metadata.channel}</p>
-            <span className="px-2 py-0.5 rounded-full bg-red-600/20 text-red-400 text-xs font-medium">
+            <p className="text-gray-500 text-sm">{metadata.channel}</p>
+            <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-600 text-xs font-medium">
               {LANG_LABELS[language] || language}
             </span>
           </div>
@@ -73,19 +73,19 @@ export default function ArticleView({
       </div>
 
       {/* Generated article title + meta */}
-      <div className="mb-4 p-4 rounded-xl bg-white/5 border border-white/10">
-        <div className="text-white/40 text-xs font-mono uppercase tracking-wider mb-1">
+      <div className="mb-4 p-4 rounded-xl bg-gray-50 border border-gray-200">
+        <div className="text-gray-400 text-xs font-mono uppercase tracking-wider mb-1">
           Generated Headline
         </div>
-        <h3 className="text-white text-lg font-bold leading-snug mb-2">
+        <h3 className="text-gray-900 text-lg font-bold leading-snug mb-2">
           {articleTitle}
         </h3>
         {metaDescription && (
           <>
-            <div className="text-white/40 text-xs font-mono uppercase tracking-wider mb-1">
+            <div className="text-gray-400 text-xs font-mono uppercase tracking-wider mb-1">
               Meta Description
             </div>
-            <p className="text-white/60 text-sm leading-relaxed">
+            <p className="text-gray-600 text-sm leading-relaxed">
               {metaDescription}
             </p>
           </>
@@ -94,13 +94,13 @@ export default function ArticleView({
 
       {/* Tabs + actions */}
       <div className="flex items-center justify-between mb-4">
-        <div className="flex gap-1 bg-white/5 rounded-lg p-1">
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
           <button
             onClick={() => setTab("article")}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
               tab === "article"
-                ? "bg-white/10 text-white"
-                : "text-white/40 hover:text-white/60"
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
             }`}
           >
             Article Body
@@ -109,8 +109,8 @@ export default function ArticleView({
             onClick={() => setTab("transcript")}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
               tab === "transcript"
-                ? "bg-white/10 text-white"
-                : "text-white/40 hover:text-white/60"
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
             }`}
           >
             Transcript
@@ -120,7 +120,7 @@ export default function ArticleView({
         <div className="flex items-center gap-2">
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-sm transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900 text-sm transition-colors"
           >
             {copied ? (
               <>
@@ -166,9 +166,9 @@ export default function ArticleView({
       </div>
 
       {/* Content */}
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 max-w-none leading-relaxed text-white/80">
+      <div className="bg-white border border-gray-200 rounded-2xl p-6 max-w-none leading-relaxed text-gray-700">
         {tab === "article" ? (
-          <div className="prose prose-invert prose-sm max-w-none">
+          <div className="prose prose-sm max-w-none">
             <ReactMarkdown>{article}</ReactMarkdown>
           </div>
         ) : (

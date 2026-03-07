@@ -24,7 +24,7 @@ export default function LanguageSelect({ value, onChange, disabled }: LanguageSe
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
             value === lang.value
               ? "bg-red-600 text-white"
-              : "bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/70"
+              : "bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700"
           } disabled:opacity-40 disabled:cursor-not-allowed`}
         >
           {lang.label}
