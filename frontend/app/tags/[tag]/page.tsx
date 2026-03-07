@@ -1,7 +1,9 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { SentimentGauge, LocalDate } from "../../../components/SentimentGauge";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://cryptodailyink.com";
 
 const LANG_BADGE: Record<string, { class: string; label: string }> = {
   english: { class: "lang-badge-en", label: "English" },
@@ -11,6 +13,34 @@ const LANG_BADGE: Record<string, { class: string; label: string }> = {
 
 interface PageProps {
   params: Promise<{ tag: string }>;
+}
+
+/* ── SEO: Dynamic metadata for tag pages ── */
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { tag } = await params;
+  const decodedTag = decodeURIComponent(tag);
+  const capitalizedTag = decodedTag.charAt(0).toUpperCase() + decodedTag.slice(1);
+  const title = `${capitalizedTag} News & Analysis | CryptoDailyInk`;
+  const description = `Latest ${decodedTag} news, market analysis, and on-chain insights on CryptoDailyInk. Stay updated with expert coverage.`;
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: `/tags/${tag}`,
+    },
+    openGraph: {
+      title,
+      description,
+      url: `${SITE_URL}/tags/${tag}`,
+      siteName: "CryptoDailyInk",
+      type: "website",
+    },
+    twitter: {
+      card: "summary",
+      title,
+      description,
+    },
+  };
 }
 
 export default async function TagPage({ params }: PageProps) {

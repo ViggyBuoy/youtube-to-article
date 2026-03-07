@@ -5,7 +5,7 @@ import type { Metadata } from "next";
 import { LocalDate, SentimentGaugeClient, ViewTracker } from "./client-parts";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://cryptodailyink.com";
 const REVALIDATE_SECONDS = 300; // 5 min cache
 
 function extractYouTubeId(url: string): string | null {
@@ -33,7 +33,7 @@ interface PageProps {
   params: Promise<{ authorSlug: string; slug: string }>;
 }
 
-/* ── OG Meta Tags for social sharing ── */
+/* ── OG Meta Tags + Canonical URL for social sharing & SEO ── */
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug, authorSlug } = await params;
   try {
@@ -47,6 +47,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       return {
         title: `${article.title} | CryptoDailyInk`,
         description: article.meta_description || article.title,
+        alternates: {
+          canonical: `/articles/${authorSlug}/${slug}`,
+        },
         openGraph: {
           title: article.title,
           description: article.meta_description || article.title,
@@ -111,11 +114,94 @@ export default async function ArticlePage({ params }: PageProps) {
   const sentiment = article.sentiment || "neutral";
   const sentimentScore = article.sentiment_score ?? 50;
   const sentimentInfo = SENTIMENT_BADGE[sentiment] || SENTIMENT_BADGE.neutral;
-  const readingTime = Math.max(1, Math.round(article.article.split(/\s+/).length / 200));
+  const wordCount = article.article.split(/\s+/).length;
+  const readingTime = Math.max(1, Math.round(wordCount / 200));
   const articlePath = `/articles/${authorSlug}/${article.slug}`;
+  const articleUrl = `${SITE_URL}${articlePath}`;
+  const publishedDate = article.created_at
+    ? new Date(article.created_at + "Z").toISOString()
+    : new Date().toISOString();
+  const ogImageUrl = article.thumbnail?.startsWith("data:")
+    ? `${API_BASE}/api/og-image/${article.slug}`
+    : article.thumbnail;
+
+  /* JSON-LD: NewsArticle schema for Google News & rich results */
+  const newsArticleSchema = {
+    "@context": "https://schema.org",
+    "@type": "NewsArticle",
+    headline: article.title,
+    description: article.meta_description || article.title,
+    image: ogImageUrl ? [ogImageUrl] : [],
+    datePublished: publishedDate,
+    dateModified: publishedDate,
+    author: {
+      "@type": "Person",
+      name: article.channel,
+      url: `${SITE_URL}/@${article.channel_slug || "author"}`,
+    },
+    publisher: {
+      "@type": "Organization",
+      name: "CryptoDailyInk",
+      url: SITE_URL,
+    },
+    mainEntityOfPage: {
+      "@type": "WebPage",
+      "@id": articleUrl,
+    },
+    wordCount: wordCount,
+    articleSection: "Crypto News",
+    inLanguage: article.language === "hindi" ? "hi" : article.language === "hinglish" ? "hi-Latn" : "en",
+    ...(article.youtube_url && {
+      video: {
+        "@type": "VideoObject",
+        name: article.title,
+        description: article.meta_description || article.title,
+        thumbnailUrl: article.thumbnail,
+        uploadDate: publishedDate,
+        contentUrl: article.youtube_url,
+        embedUrl: `https://www.youtube.com/embed/${extractYouTubeId(article.youtube_url) || ""}`,
+        duration: `PT${Math.floor(article.duration / 60)}M${article.duration % 60}S`,
+      },
+    }),
+  };
+
+  /* JSON-LD: BreadcrumbList for search navigation */
+  const breadcrumbSchema = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Home",
+        item: SITE_URL,
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: article.channel,
+        item: `${SITE_URL}/@${article.channel_slug || "author"}`,
+      },
+      {
+        "@type": "ListItem",
+        position: 3,
+        name: article.title,
+        item: articleUrl,
+      },
+    ],
+  };
 
   return (
     <div className="cp-page">
+      {/* Structured Data: NewsArticle + BreadcrumbList */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(newsArticleSchema) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+      />
       <ViewTracker slug={article.slug} />
       <Link href="/" className="back-btn">
         &larr; All Articles

@@ -1,6 +1,8 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://cryptodailyink.com";
 
 const LANG_BADGE: Record<string, { cls: string; label: string }> = {
   english: { cls: "lang-badge-en", label: "English" },
@@ -32,6 +34,50 @@ interface ChannelData {
 
 interface PageProps {
   params: Promise<{ channelSlug: string }>;
+}
+
+/* ── SEO: Dynamic metadata for author profile pages ── */
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { channelSlug } = await params;
+  try {
+    const res = await fetch(`${API_BASE}/api/authors/${channelSlug}`, {
+      next: { revalidate: 300 },
+    });
+    if (res.ok) {
+      const data: ChannelData = await res.json();
+      const title = `${data.channel} — Crypto Analysis & Market Insights | CryptoDailyInk`;
+      const description = `Read ${data.article_count} article${data.article_count !== 1 ? "s" : ""} by ${data.channel} on CryptoDailyInk. Expert crypto market analysis, on-chain signals, and blockchain insights.`;
+      return {
+        title,
+        description,
+        alternates: {
+          canonical: `/@${channelSlug}`,
+        },
+        openGraph: {
+          title,
+          description,
+          url: `${SITE_URL}/@${channelSlug}`,
+          siteName: "CryptoDailyInk",
+          type: "profile",
+          ...(data.channel_avatar && {
+            images: [{ url: data.channel_avatar, width: 400, height: 400, alt: data.channel }],
+          }),
+        },
+        twitter: {
+          card: "summary",
+          title,
+          description,
+          ...(data.channel_avatar && { images: [data.channel_avatar] }),
+        },
+      };
+    }
+  } catch {
+    // Fallback
+  }
+  return {
+    title: "Author Profile | CryptoDailyInk",
+    description: "Crypto news author profile on CryptoDailyInk.",
+  };
 }
 
 export default async function ChannelProfilePage({ params }: PageProps) {
@@ -74,8 +120,49 @@ export default async function ChannelProfilePage({ params }: PageProps) {
     );
   }
 
+  /* JSON-LD: ProfilePage schema for author pages */
+  const profileSchema = {
+    "@context": "https://schema.org",
+    "@type": "ProfilePage",
+    mainEntity: {
+      "@type": "Person",
+      name: data.channel,
+      url: `${SITE_URL}/@${data.channel_slug}`,
+      ...(data.channel_avatar && { image: data.channel_avatar }),
+      description: `${data.channel} publishes crypto insights and market analysis. ${data.article_count} articles on CryptoDailyInk.`,
+    },
+  };
+
+  const breadcrumbSchema = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      {
+        "@type": "ListItem",
+        position: 1,
+        name: "Home",
+        item: SITE_URL,
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        name: data.channel,
+        item: `${SITE_URL}/@${data.channel_slug}`,
+      },
+    ],
+  };
+
   return (
     <div className="cp-page">
+      {/* Structured Data: ProfilePage + BreadcrumbList */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(profileSchema) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+      />
       <Link href="/" className="back-btn">
         &larr; All Articles
       </Link>

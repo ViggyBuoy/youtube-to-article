@@ -13,15 +13,50 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://cryptodailyink.com";
+
 export const metadata: Metadata = {
-  title: "CryptoDailyInk",
-  description: "Crypto, Forex & Market News — Powered by AI",
+  title: "CryptoDailyInk | Breaking Market Alpha, On-Chain Signals & Crypto News",
+  description:
+    "Master the markets with Cryptodailyink.com. Real-time Alpha on Bitcoin, Ethereum, and Altcoins. Get expert on-chain analysis, institutional flow tracking, and breaking DeFi updates.",
+  keywords: [
+    "crypto market alpha",
+    "real-time crypto signals",
+    "bitcoin institutional news",
+    "on-chain data analysis",
+    "ethereum price action",
+    "defi protocol updates",
+    "cryptodailyink alpha",
+    "solana ecosystem news",
+  ],
+  metadataBase: new URL(SITE_URL),
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    title: "CryptoDailyInk | Breaking Market Alpha & Crypto News",
+    description:
+      "Real-time Alpha on Bitcoin, Ethereum, and Altcoins. Expert on-chain analysis, institutional flow tracking, and breaking DeFi updates.",
+    url: SITE_URL,
+    siteName: "CryptoDailyInk",
+    type: "website",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "CryptoDailyInk | Breaking Market Alpha & Crypto News",
+    description:
+      "Real-time Alpha on Bitcoin, Ethereum, and Altcoins. Expert on-chain analysis and breaking DeFi updates.",
+  },
   robots: {
-    index: false,
-    follow: false,
+    index: true,
+    follow: true,
     googleBot: {
-      index: false,
-      follow: false,
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
     },
   },
 };
@@ -66,6 +101,43 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           />
         </noscript>
         {/* End Google Tag Manager (noscript) */}
+        {/* JSON-LD: Organization + WebSite schema */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@graph": [
+                {
+                  "@type": ["Organization", "NewsMediaOrganization"],
+                  "@id": `${SITE_URL}/#organization`,
+                  name: "CryptoDailyInk",
+                  url: SITE_URL,
+                  description:
+                    "High-frequency digital newsroom delivering real-time market intelligence, on-chain data analysis, and breaking updates across the global blockchain ecosystem.",
+                  foundingDate: "2025",
+                  sameAs: [],
+                  publishingPrinciples: `${SITE_URL}/about`,
+                },
+                {
+                  "@type": "WebSite",
+                  "@id": `${SITE_URL}/#website`,
+                  url: SITE_URL,
+                  name: "CryptoDailyInk",
+                  publisher: { "@id": `${SITE_URL}/#organization` },
+                  potentialAction: {
+                    "@type": "SearchAction",
+                    target: {
+                      "@type": "EntryPoint",
+                      urlTemplate: `${SITE_URL}/?q={search_term_string}`,
+                    },
+                    "query-input": "required name=search_term_string",
+                  },
+                },
+              ],
+            }),
+          }}
+        />
         <Navbar />
         {children}
       </body>
