@@ -50,6 +50,7 @@ from database import (
     get_all_tags, get_articles_by_tag,
     get_setting, get_setting_with_timestamp, upsert_setting,
     increment_view_count, get_editors_choice,
+    set_featured_article, unset_featured_article, get_featured_article,
 )
 
 
@@ -1622,6 +1623,33 @@ async def admin_bulk_delete_authors(req: BulkDeleteAuthorsRequest, user: str = D
         raise HTTPException(status_code=400, detail="No authors provided")
     count = await delete_authors_bulk(req.channel_slugs)
     return {"deleted_count": count}
+
+
+# ── Admin Featured Article Endpoints ─────────────────────────────────────────
+
+@app.put("/api/admin/articles/{slug}/feature")
+async def admin_feature_article(slug: str, user: str = Depends(_verify_admin_token)):
+    """Set an article as the featured (hero) article. Unsets any previous."""
+    success = await set_featured_article(slug)
+    if not success:
+        raise HTTPException(status_code=404, detail="Article not found")
+    return {"status": "ok", "slug": slug, "is_featured": True}
+
+
+@app.delete("/api/admin/articles/{slug}/feature")
+async def admin_unfeature_article(slug: str, user: str = Depends(_verify_admin_token)):
+    """Remove featured status from an article."""
+    success = await unset_featured_article(slug)
+    if not success:
+        raise HTTPException(status_code=404, detail="Article not found")
+    return {"status": "ok", "slug": slug, "is_featured": False}
+
+
+@app.get("/api/admin/featured")
+async def admin_get_featured(user: str = Depends(_verify_admin_token)):
+    """Get the currently featured article."""
+    article = await get_featured_article()
+    return {"article": article}
 
 
 # ── Admin Source Endpoints ───────────────────────────────────────────────────

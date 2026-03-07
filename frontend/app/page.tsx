@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -57,6 +57,7 @@ interface Article {
   sentiment?: string;
   sentiment_score?: number;
   tags?: string;
+  is_featured?: boolean;
   created_at: string;
 }
 
@@ -164,6 +165,9 @@ export default function HomePage() {
   const [editorsChoice, setEditorsChoice] = useState<Article | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [gridVisible, setGridVisible] = useState(4);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollPaused = useRef(false);
 
   useScrollReveal();
 
@@ -211,9 +215,38 @@ export default function HomePage() {
   }
 
   const featured = filtered[0] || null;
-  const sideList = filtered.slice(1, 5);
-  const gridArticles = filtered.slice(5);
+  const sideList = filtered.slice(1, 6);
+  const gridArticles = filtered.slice(6);
+  const visibleGrid = gridArticles.slice(0, gridVisible);
+  const hasMoreGrid = gridVisible < gridArticles.length;
 
+  // Reset grid pagination on category/search change
+  useEffect(() => {
+    setGridVisible(4);
+  }, [category, searchQuery]);
+
+  // Auto-scroll discovery section every 3 seconds
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container || gridArticles.length === 0) return;
+    container.scrollLeft = 0;
+
+    const interval = setInterval(() => {
+      if (scrollPaused.current || !scrollRef.current) return;
+      const card = scrollRef.current.querySelector(".cd-scroll-card") as HTMLElement;
+      if (!card) return;
+      const scrollAmount = card.offsetWidth + 16; // card width + gap
+      const maxScroll = scrollRef.current.scrollWidth - scrollRef.current.clientWidth;
+
+      if (scrollRef.current.scrollLeft >= maxScroll - 10) {
+        scrollRef.current.scrollTo({ left: 0, behavior: "smooth" });
+      } else {
+        scrollRef.current.scrollBy({ left: scrollAmount, behavior: "smooth" });
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [gridArticles.length]);
 
   if (loading) {
     return (
@@ -435,9 +468,9 @@ export default function HomePage() {
             </div>
           )}
 
-          {gridArticles.length > 0 && (
+          {visibleGrid.length > 0 && (
             <div className="cd-grid">
-              {gridArticles.map((a, i) => (
+              {visibleGrid.map((a, i) => (
                 <Link
                   key={a.slug}
                   href={articleUrl(a)}
@@ -465,6 +498,50 @@ export default function HomePage() {
                   </div>
                 </Link>
               ))}
+            </div>
+          )}
+
+          {hasMoreGrid && (
+            <div className="cd-view-more-wrap">
+              <button
+                className="cd-view-more-btn"
+                onClick={() => setGridVisible((prev) => prev + 4)}
+              >
+                View More
+              </button>
+            </div>
+          )}
+
+          {/* ─── DISCOVER MORE — horizontal auto-scroll ─── */}
+          {gridArticles.length > 0 && (
+            <div className="cd-scroll-section">
+              <h3 className="cd-scroll-heading">Discover More</h3>
+              <div
+                className="cd-scroll-track"
+                ref={scrollRef}
+                onMouseEnter={() => { scrollPaused.current = true; }}
+                onMouseLeave={() => { scrollPaused.current = false; }}
+              >
+                {gridArticles.map((a) => (
+                  <Link
+                    key={`scroll-${a.slug}`}
+                    href={articleUrl(a)}
+                    className="cd-scroll-card"
+                  >
+                    <div className="cd-scroll-img">
+                      <img src={a.thumbnail} alt={a.title} />
+                    </div>
+                    <div className="cd-scroll-body">
+                      <h4 className="cd-scroll-title">{a.title}</h4>
+                      <div className="cd-card-meta">
+                        <span className="cd-card-author">{a.channel}</span>
+                        <span className="cd-card-date">{timeAgo(a.created_at)}</span>
+                        <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
             </div>
           )}
         </main>

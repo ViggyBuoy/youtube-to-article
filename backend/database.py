@@ -134,6 +134,12 @@ async def init_db():
         )
         print(f"[db] View count column verified")
 
+        # ── Featured article column migration ──
+        await conn.execute(
+            "ALTER TABLE articles ADD COLUMN IF NOT EXISTS is_featured BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+        print(f"[db] is_featured column verified")
+
         # ── Settings table (key-value store) ──
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -189,8 +195,8 @@ async def get_all_articles() -> list[dict]:
         rows = await conn.fetch(
             "SELECT id, slug, title, meta_description, channel, channel_slug, "
             "channel_avatar, thumbnail, duration, language, tags, "
-            "sentiment, sentiment_score, created_at "
-            "FROM articles ORDER BY created_at DESC"
+            "sentiment, sentiment_score, is_featured, created_at "
+            "FROM articles ORDER BY is_featured DESC, created_at DESC"
         )
         return [_row_to_dict(row) for row in rows]
 
@@ -480,3 +486,39 @@ async def upsert_setting(key: str, value: str) -> None:
                SET value = $2, updated_at = NOW()""",
             key, value,
         )
+
+
+# ── Featured Article ─────────────────────────────────────────────────────────
+
+async def set_featured_article(slug: str) -> bool:
+    """Set an article as featured. Unsets any previously featured article first."""
+    async with _pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "UPDATE articles SET is_featured = FALSE WHERE is_featured = TRUE"
+            )
+            result = await conn.execute(
+                "UPDATE articles SET is_featured = TRUE WHERE slug = $1", slug
+            )
+            return result != "UPDATE 0"
+
+
+async def unset_featured_article(slug: str) -> bool:
+    """Remove featured status from an article."""
+    async with _pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE articles SET is_featured = FALSE WHERE slug = $1", slug
+        )
+        return result != "UPDATE 0"
+
+
+async def get_featured_article() -> dict | None:
+    """Get the currently featured article, if any."""
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, slug, title, meta_description, channel, channel_slug, "
+            "channel_avatar, thumbnail, duration, language, tags, "
+            "sentiment, sentiment_score, is_featured, created_at "
+            "FROM articles WHERE is_featured = TRUE LIMIT 1"
+        )
+        return _row_to_dict(row) if row else None

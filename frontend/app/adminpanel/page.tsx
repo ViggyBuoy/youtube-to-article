@@ -17,6 +17,7 @@ interface Article {
   duration: number;
   language: string;
   article?: string;
+  is_featured?: boolean;
   created_at: string;
 }
 
@@ -154,7 +155,9 @@ function AdminDashboard({
   token: string;
   onLogout: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"articles" | "sources" | "settings">("articles");
+  const [activeTab, setActiveTab] = useState<"articles" | "sources" | "settings" | "priority">("articles");
+  const [prioritySearch, setPrioritySearch] = useState("");
+  const [featuringSlug, setFeaturingSlug] = useState<string | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
   const [sources, setSources] = useState<Source[]>([]);
   const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
@@ -606,6 +609,67 @@ function AdminDashboard({
     }
   }
 
+  /* ── Priority handlers ── */
+  const currentFeatured = articles.find((a) => a.is_featured) || null;
+
+  const prioritySearchResults = prioritySearch.trim()
+    ? articles.filter(
+        (a) =>
+          a.title.toLowerCase().includes(prioritySearch.toLowerCase()) ||
+          a.channel.toLowerCase().includes(prioritySearch.toLowerCase()) ||
+          a.slug.toLowerCase().includes(prioritySearch.toLowerCase())
+      )
+    : [];
+
+  async function handleSetFeatured(slug: string) {
+    setFeaturingSlug(slug);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/articles/${slug}/feature`, {
+        method: "PUT",
+        headers: authHeaders(token),
+      });
+      if (res.ok) {
+        setArticles((prev) =>
+          prev.map((a) => ({
+            ...a,
+            is_featured: a.slug === slug,
+          }))
+        );
+        setPrioritySearch("");
+      } else {
+        alert("Failed to set featured article");
+      }
+    } catch {
+      alert("Failed to set featured article");
+    } finally {
+      setFeaturingSlug(null);
+    }
+  }
+
+  async function handleRemoveFeatured(slug: string) {
+    setFeaturingSlug(slug);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/articles/${slug}/feature`, {
+        method: "DELETE",
+        headers: authHeaders(token),
+      });
+      if (res.ok) {
+        setArticles((prev) =>
+          prev.map((a) => ({
+            ...a,
+            is_featured: false,
+          }))
+        );
+      } else {
+        alert("Failed to remove featured article");
+      }
+    } catch {
+      alert("Failed to remove featured article");
+    } finally {
+      setFeaturingSlug(null);
+    }
+  }
+
   async function fetchScraperLog() {
     try {
       const res = await fetch(`${API_BASE}/api/admin/sources/log`, {
@@ -749,6 +813,15 @@ function AdminDashboard({
             Settings
             {cookieStatus?.health?.status === "expired" && (
               <span className="adm-tab-count" style={{ background: "#d92b2b" }}>!</span>
+            )}
+          </button>
+          <button
+            className={`adm-tab ${activeTab === "priority" ? "adm-tab-active" : ""}`}
+            onClick={() => setActiveTab("priority")}
+          >
+            Priority
+            {articles.some((a) => a.is_featured) && (
+              <span className="adm-tab-count" style={{ background: "var(--cp-accent)" }}>1</span>
             )}
           </button>
         </div>
@@ -1169,6 +1242,100 @@ function AdminDashboard({
                     </div>
                   </div>
                 ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Priority Tab ── */}
+        {activeTab === "priority" && (
+          <div className="adm-priority">
+            {/* Currently featured */}
+            <div className="adm-priority-current">
+              <h3 className="adm-section-title">Currently Featured</h3>
+              {currentFeatured ? (
+                <div className="adm-priority-card">
+                  <img
+                    src={currentFeatured.thumbnail}
+                    alt={currentFeatured.title}
+                    className="adm-priority-thumb"
+                  />
+                  <div className="adm-priority-info">
+                    <h4 className="adm-priority-title">{currentFeatured.title}</h4>
+                    <p className="adm-priority-channel">{currentFeatured.channel}</p>
+                  </div>
+                  <button
+                    className="adm-btn-delete"
+                    onClick={() => handleRemoveFeatured(currentFeatured.slug)}
+                    disabled={featuringSlug === currentFeatured.slug}
+                  >
+                    {featuringSlug === currentFeatured.slug ? "Removing..." : "Remove"}
+                  </button>
+                </div>
+              ) : (
+                <p className="adm-priority-empty">
+                  No article manually featured. The latest article is shown as the hero.
+                </p>
+              )}
+            </div>
+
+            {/* Search to set featured */}
+            <div className="adm-priority-search-wrap">
+              <h3 className="adm-section-title">Set Featured Article</h3>
+              <div className="adm-search-bar">
+                <svg className="adm-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                  <circle cx="11" cy="11" r="8" strokeWidth="2" />
+                  <path d="M21 21l-4.35-4.35" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                <input
+                  type="text"
+                  value={prioritySearch}
+                  onChange={(e) => setPrioritySearch(e.target.value)}
+                  placeholder="Search articles to feature..."
+                  className="adm-search-input"
+                />
+                {prioritySearch && (
+                  <button
+                    className="adm-search-clear"
+                    onClick={() => setPrioritySearch("")}
+                  >
+                    &times;
+                  </button>
+                )}
+              </div>
+
+              {prioritySearch.trim() && (
+                <div className="adm-priority-results">
+                  {prioritySearchResults.length === 0 ? (
+                    <p className="adm-priority-empty">No articles found.</p>
+                  ) : (
+                    prioritySearchResults.slice(0, 10).map((a) => (
+                      <div key={a.slug} className="adm-priority-result">
+                        <img
+                          src={a.thumbnail}
+                          alt={a.title}
+                          className="adm-priority-result-thumb"
+                        />
+                        <div className="adm-priority-result-info">
+                          <h4 className="adm-priority-result-title">{a.title}</h4>
+                          <p className="adm-priority-channel">{a.channel}</p>
+                        </div>
+                        <button
+                          className="adm-save-btn"
+                          onClick={() => handleSetFeatured(a.slug)}
+                          disabled={featuringSlug === a.slug || a.is_featured}
+                          style={{ flexShrink: 0 }}
+                        >
+                          {a.is_featured
+                            ? "Featured"
+                            : featuringSlug === a.slug
+                            ? "Setting..."
+                            : "Set Featured"}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
               )}
             </div>
           </div>
