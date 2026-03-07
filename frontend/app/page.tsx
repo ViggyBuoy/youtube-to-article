@@ -165,7 +165,7 @@ export default function HomePage() {
   const [editorsChoice, setEditorsChoice] = useState<Article | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [gridVisible, setGridVisible] = useState(4);
+  const [gridVisible, setGridVisible] = useState(6);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollPaused = useRef(false);
 
@@ -222,7 +222,7 @@ export default function HomePage() {
 
   // Reset grid pagination on category/search change
   useEffect(() => {
-    setGridVisible(4);
+    setGridVisible(6);
   }, [category, searchQuery]);
 
   // Auto-scroll discovery section every 3 seconds
@@ -505,7 +505,7 @@ export default function HomePage() {
             <div className="cd-view-more-wrap">
               <button
                 className="cd-view-more-btn"
-                onClick={() => setGridVisible((prev) => prev + 4)}
+                onClick={() => setGridVisible((prev) => prev + 6)}
               >
                 View More
               </button>
