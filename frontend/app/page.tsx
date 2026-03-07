@@ -166,8 +166,20 @@ export default function HomePage() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [gridVisible, setGridVisible] = useState(6);
+  const [isMobile, setIsMobile] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollPaused = useRef(false);
+
+  // Detect mobile viewport
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 900px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  const gridPageSize = isMobile ? 4 : 6;
 
   useScrollReveal();
 
@@ -220,10 +232,10 @@ export default function HomePage() {
   const visibleGrid = gridArticles.slice(0, gridVisible);
   const hasMoreGrid = gridVisible < gridArticles.length;
 
-  // Reset grid pagination on category/search change
+  // Reset grid pagination on category/search/viewport change
   useEffect(() => {
-    setGridVisible(6);
-  }, [category, searchQuery]);
+    setGridVisible(gridPageSize);
+  }, [category, searchQuery, gridPageSize]);
 
   // Auto-scroll discovery section every 3 seconds
   useEffect(() => {
@@ -505,7 +517,7 @@ export default function HomePage() {
             <div className="cd-view-more-wrap">
               <button
                 className="cd-view-more-btn"
-                onClick={() => setGridVisible((prev) => prev + 6)}
+                onClick={() => setGridVisible((prev) => prev + gridPageSize)}
               >
                 View More
               </button>
