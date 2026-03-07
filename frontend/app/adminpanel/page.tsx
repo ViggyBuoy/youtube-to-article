@@ -572,7 +572,7 @@ function AdminDashboard({
                       </div>
                       <div className="adm-article-info">
                         <h4 className="adm-article-title">
-                          <Link href={`/articles/${a.slug}`}>{a.title}</Link>
+                          <Link href={`/articles/${a.channel_slug || "author"}/${a.slug}`}>{a.title}</Link>
                         </h4>
                         <div className="adm-article-meta">
                           <span>{a.channel}</span>

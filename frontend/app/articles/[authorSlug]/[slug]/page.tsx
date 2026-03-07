@@ -11,23 +11,23 @@ function extractYouTubeId(url: string): string | null {
   return match ? match[1] : null;
 }
 
-const LANG_BADGE: Record<string, { class: string; label: string }> = {
-  english: { class: "lang-badge-en", label: "English" },
-  hindi: { class: "lang-badge-hi", label: "Hindi" },
-  hinglish: { class: "lang-badge-hing", label: "Hinglish" },
+const SENTIMENT_BADGE: Record<string, { cls: string; label: string }> = {
+  bullish: { cls: "sentiment-bullish", label: "Bullish" },
+  neutral: { cls: "sentiment-neutral", label: "Neutral" },
+  bearish: { cls: "sentiment-bearish", label: "Bearish" },
 };
 
 interface PageProps {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ authorSlug: string; slug: string }>;
 }
 
 export default async function ArticlePage({ params }: PageProps) {
-  const { slug } = await params;
+  const { slug, authorSlug } = await params;
 
   let article = null;
   try {
     const res = await fetch(`${API_BASE}/api/articles/${slug}`, {
-      cache: "no-store",
+      next: { revalidate: 60 },
     });
     if (res.ok) {
       article = await res.json();
@@ -51,7 +51,9 @@ export default async function ArticlePage({ params }: PageProps) {
     );
   }
 
-  const langInfo = LANG_BADGE[article.language] || { class: "", label: article.language };
+  const sentiment = article.sentiment || "neutral";
+  const sentimentScore = article.sentiment_score ?? 50;
+  const sentimentInfo = SENTIMENT_BADGE[sentiment] || SENTIMENT_BADGE.neutral;
   const publishedDate = new Date(article.created_at + "Z");
   const formattedDate = publishedDate.toLocaleDateString("en-US", {
     year: "numeric",
@@ -64,24 +66,30 @@ export default async function ArticlePage({ params }: PageProps) {
     hour12: true,
   });
   const readingTime = Math.max(1, Math.round(article.article.split(/\s+/).length / 200));
+  const articlePath = `/articles/${authorSlug}/${article.slug}`;
 
   return (
     <div className="cp-page">
-      {/* Top nav bar */}
       <Link href="/" className="back-btn">
         &larr; All Articles
       </Link>
 
-      {/* Article layout */}
       <div className="ap-layout">
-        {/* ─── Main article column ─── */}
         <article className="ap-article">
-          {/* Category + Share */}
           <div className="ap-topbar">
-            <span className="ap-category">{langInfo.label}</span>
+            <span className={`cd-sentiment-badge ${sentimentInfo.cls}`}>
+              {sentimentInfo.label}
+              <span className="cd-sentiment-meter">
+                <span
+                  className={`cd-sentiment-fill cd-sentiment-fill-${sentiment}`}
+                  style={{ width: `${sentimentScore}%` }}
+                />
+              </span>
+              <span className="cd-sentiment-score">{sentimentScore}</span>
+            </span>
             <a
               className="ap-share-link"
-              href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(article.title)}&url=${encodeURIComponent(`${SITE_URL}/articles/${article.slug}`)}`}
+              href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(article.title)}&url=${encodeURIComponent(`${SITE_URL}${articlePath}`)}`}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -89,33 +97,26 @@ export default async function ArticlePage({ params }: PageProps) {
             </a>
           </div>
 
-          {/* Title */}
           <h1 className="ap-title">{article.title}</h1>
 
-          {/* Meta description / lead */}
           {article.meta_description && (
             <p className="ap-lead">{article.meta_description}</p>
           )}
 
-          {/* Byline */}
           <div className="ap-byline">
             <span>By <Link href={`/@${article.channel_slug || ""}`}><strong>{article.channel}</strong></Link></span>
           </div>
 
-          {/* Date */}
           <div className="ap-date">
             {formattedDate}, {formattedTime} &middot; {readingTime} min read
           </div>
 
-          {/* Separator */}
           <hr className="ap-divider" />
 
-          {/* Featured image */}
           <div className="ap-featured-img">
             <img src={article.thumbnail} alt={article.title} />
           </div>
 
-          {/* Article body */}
           <div className="article-text">
             <ReactMarkdown
               components={{
@@ -130,7 +131,6 @@ export default async function ArticlePage({ params }: PageProps) {
             </ReactMarkdown>
           </div>
 
-          {/* YouTube Video Embed — only for YouTube articles (duration > 0) */}
           {article.duration > 0 && article.youtube_url && (() => {
             const videoId = extractYouTubeId(article.youtube_url);
             return videoId ? (
@@ -147,9 +147,8 @@ export default async function ArticlePage({ params }: PageProps) {
             ) : null;
           })()}
 
-          {/* Tags */}
           <div className="article-tags">
-            <span className="tag">{article.language}</span>
+            <span className={`tag ${sentimentInfo.cls}`}>{sentimentInfo.label}</span>
             {(article.tags || "")
               .split(",")
               .filter(Boolean)
@@ -165,21 +164,19 @@ export default async function ArticlePage({ params }: PageProps) {
           </div>
         </article>
 
-        {/* ─── Right sidebar ─── */}
         <aside className="ap-sidebar">
-          {/* Article details card */}
           <div className="ap-details-card">
             <div className="ap-details-title">Article Details</div>
             <div className="ap-detail-row">
-              <span className="ap-detail-label">Channel</span>
+              <span className="ap-detail-label">Author</span>
               <Link href={`/@${article.channel_slug || ""}`} className="ap-detail-value cd-author-link">
                 {article.channel}
               </Link>
             </div>
             <div className="ap-detail-row">
-              <span className="ap-detail-label">Language</span>
-              <span className={`cd-lang-pill ${langInfo.class}`}>
-                {langInfo.label}
+              <span className="ap-detail-label">Sentiment</span>
+              <span className={`cd-sentiment-pill ${sentimentInfo.cls}`}>
+                {sentimentInfo.label} ({sentimentScore})
               </span>
             </div>
             <div className="ap-detail-row">
@@ -198,13 +195,12 @@ export default async function ArticlePage({ params }: PageProps) {
             </div>
           </div>
 
-          {/* Share buttons */}
           <div className="ap-details-card">
             <div className="ap-details-title">Share</div>
             <div className="share-btns">
               <a
                 className="share-btn"
-                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(article.title)}&url=${encodeURIComponent(`${SITE_URL}/articles/${article.slug}`)}`}
+                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(article.title)}&url=${encodeURIComponent(`${SITE_URL}${articlePath}`)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ textDecoration: "none" }}
@@ -213,7 +209,7 @@ export default async function ArticlePage({ params }: PageProps) {
               </a>
               <a
                 className="share-btn"
-                href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(`${SITE_URL}/articles/${article.slug}`)}`}
+                href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(`${SITE_URL}${articlePath}`)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ textDecoration: "none" }}
@@ -223,7 +219,6 @@ export default async function ArticlePage({ params }: PageProps) {
             </div>
           </div>
 
-          {/* More articles CTA */}
           <Link href="/" className="cd-cta-card">
             <h4>Browse All Articles</h4>
             <p>Read more published stories</p>
@@ -231,7 +226,6 @@ export default async function ArticlePage({ params }: PageProps) {
         </aside>
       </div>
 
-      {/* Footer */}
       <footer className="cd-footer">
         <div className="cd-footer-brand">
           Chain<span style={{ color: "var(--cp-accent)" }}>.</span>Pulse

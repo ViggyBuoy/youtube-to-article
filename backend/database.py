@@ -119,6 +119,15 @@ async def init_db():
         )
         print(f"[db] Tags column verified")
 
+        # ── Sentiment columns migration ──
+        await conn.execute(
+            "ALTER TABLE articles ADD COLUMN IF NOT EXISTS sentiment TEXT NOT NULL DEFAULT 'neutral'"
+        )
+        await conn.execute(
+            "ALTER TABLE articles ADD COLUMN IF NOT EXISTS sentiment_score INTEGER NOT NULL DEFAULT 50"
+        )
+        print(f"[db] Sentiment columns verified")
+
 
 async def close_db():
     """Close the connection pool."""
@@ -142,15 +151,19 @@ async def insert_article(
     transcript: str,
     article: str,
     tags: str = "",
+    sentiment: str = "neutral",
+    sentiment_score: int = 50,
 ) -> dict:
     async with _pool.acquire() as conn:
         await conn.execute(
             """INSERT INTO articles
                (slug, title, meta_description, channel, channel_slug, channel_avatar,
-                thumbnail, duration, youtube_url, language, transcript, article, tags)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)""",
+                thumbnail, duration, youtube_url, language, transcript, article, tags,
+                sentiment, sentiment_score)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)""",
             slug, title, meta_description, channel, channel_slug, channel_avatar,
             thumbnail, duration, youtube_url, language, transcript, article, tags,
+            sentiment, sentiment_score,
         )
     return await get_article_by_slug(slug)
 
@@ -159,7 +172,8 @@ async def get_all_articles() -> list[dict]:
     async with _pool.acquire() as conn:
         rows = await conn.fetch(
             "SELECT id, slug, title, meta_description, channel, channel_slug, "
-            "channel_avatar, thumbnail, duration, language, tags, created_at "
+            "channel_avatar, thumbnail, duration, language, tags, "
+            "sentiment, sentiment_score, created_at "
             "FROM articles ORDER BY created_at DESC"
         )
         return [_row_to_dict(row) for row in rows]

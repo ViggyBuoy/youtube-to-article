@@ -114,17 +114,13 @@ GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 # Configure Gemini client
 gemini_client = genai.Client(api_key=GEMINI_KEY)
 
-# Random American journalist names for RSS articles
+# 10 fixed writer accounts — articles are distributed round-robin
 _AMERICAN_AUTHOR_NAMES = [
     "James Mitchell", "Sarah Johnson", "Michael Chen", "Emily Rodriguez",
     "David Thompson", "Jessica Williams", "Ryan Parker", "Amanda Foster",
-    "Christopher Lee", "Lauren Martinez", "Andrew Sullivan", "Rachel Kim",
-    "Daniel Cooper", "Megan Brooks", "Tyler Washington", "Samantha Reed",
-    "Nathan Hayes", "Olivia Bennett", "Brandon Cruz", "Ashley Morgan",
-    "Kevin Patel", "Stephanie Rivera", "Justin Howard", "Nicole Adams",
-    "Eric Nguyen", "Katherine Scott", "Marcus Wright", "Hannah Clarke",
-    "Derek Santos", "Victoria Stone",
+    "Christopher Lee", "Lauren Martinez",
 ]
+_author_index = 0  # round-robin counter
 
 
 YOUTUBE_URL_PATTERN = re.compile(
@@ -891,12 +887,14 @@ STRICT CONSTRAINTS:
 * Use Markdown formatting (H2, H3, Bold, Lists, Tables, Hyperlinks)
 * Do NOT copy phrases verbatim — fully rewrite in original language
 
-You MUST return valid JSON with exactly these four fields:
+You MUST return valid JSON with exactly these six fields:
 {{
   "title": "A compelling, SEO-optimized headline (50-80 characters, plain text only)",
   "meta_description": "A 1-2 sentence BLUF summary for SEO (150-160 characters)",
   "body": "The full rewritten article in Markdown (600-1000 words)",
-  "tags": "5-8 lowercase comma-separated crypto/topic tags relevant to this article (e.g. bitcoin,ethereum,defi,regulation,market-analysis)"
+  "tags": "5-8 lowercase comma-separated crypto/topic tags relevant to this article (e.g. bitcoin,ethereum,defi,regulation,market-analysis)",
+  "sentiment": "One of: bullish, neutral, bearish — based on overall market sentiment of the article",
+  "sentiment_score": "Integer 0-100 where 0=extremely bearish, 50=neutral, 100=extremely bullish"
 }}
 
 Return ONLY the JSON object, no markdown code fences, no extra text.
@@ -922,15 +920,25 @@ ARTICLE TO REWRITE:
             cleaned = cleaned.strip()
         result = json.loads(cleaned)
         clean_title = result.get("title", original_title).strip().strip("*").strip('"').strip()
+        sentiment = result.get("sentiment", "neutral").strip().lower()
+        if sentiment not in ("bullish", "neutral", "bearish"):
+            sentiment = "neutral"
+        try:
+            sentiment_score = int(result.get("sentiment_score", 50))
+            sentiment_score = max(0, min(100, sentiment_score))
+        except (ValueError, TypeError):
+            sentiment_score = 50
         return {
             "title": clean_title,
             "meta_description": result.get("meta_description", "").strip().strip('"'),
             "body": result.get("body", raw),
             "tags": _clean_tags(result.get("tags", "")),
+            "sentiment": sentiment,
+            "sentiment_score": sentiment_score,
         }
     except (json.JSONDecodeError, AttributeError) as e:
         print(f"[scraper] JSON parse failed ({e}), using raw text")
-        return {"title": original_title, "meta_description": "", "body": raw, "tags": ""}
+        return {"title": original_title, "meta_description": "", "body": raw, "tags": "", "sentiment": "neutral", "sentiment_score": 50}
 
 
 async def _run_scrape_cycle():
@@ -1003,8 +1011,10 @@ async def _run_scrape_cycle():
                     else:
                         thumbnail = ""
 
-                    # Random American journalist name as author
-                    author_name = random.choice(_AMERICAN_AUTHOR_NAMES)
+                    # Round-robin author assignment across 10 writers
+                    global _author_index
+                    author_name = _AMERICAN_AUTHOR_NAMES[_author_index % len(_AMERICAN_AUTHOR_NAMES)]
+                    _author_index += 1
 
                     # Publish
                     channel_slug = generate_channel_slug(author_name)
@@ -1022,6 +1032,8 @@ async def _run_scrape_cycle():
                         transcript=text,
                         article=article_data["body"],
                         tags=article_data.get("tags", ""),
+                        sentiment=article_data.get("sentiment", "neutral"),
+                        sentiment_score=article_data.get("sentiment_score", 50),
                     )
 
                     await insert_seen_url(url, source["id"], article_data["title"], "published")
@@ -1193,16 +1205,24 @@ async def publish(req: PublishRequest):
 
 @app.get("/api/articles")
 async def list_articles():
+    from starlette.responses import JSONResponse as SJSONResponse
     articles = await get_all_articles()
-    return {"articles": articles}
+    return SJSONResponse(
+        content={"articles": articles},
+        headers={"Cache-Control": "public, s-maxage=30, stale-while-revalidate=60"},
+    )
 
 
 @app.get("/api/articles/{slug}")
 async def get_article(slug: str):
+    from starlette.responses import JSONResponse as SJSONResponse
     article = await get_article_by_slug(slug)
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
-    return article
+    return SJSONResponse(
+        content=article,
+        headers={"Cache-Control": "public, s-maxage=60, stale-while-revalidate=120"},
+    )
 
 
 @app.get("/api/authors")

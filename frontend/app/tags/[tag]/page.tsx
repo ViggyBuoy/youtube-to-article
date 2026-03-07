@@ -55,7 +55,7 @@ export default async function TagPage({ params }: PageProps) {
               return (
                 <Link
                   key={a.slug}
-                  href={`/articles/${a.slug}`}
+                  href={`/articles/${a.channel_slug || "author"}/${a.slug}`}
                   className="cd-grid-card"
                 >
                   {a.thumbnail && (

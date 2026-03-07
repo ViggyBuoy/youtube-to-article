@@ -104,7 +104,7 @@ export default function ConverterPage() {
       }
 
       const data = await res.json();
-      router.push(`/articles/${data.slug}`);
+      router.push(`/articles/${data.channel_slug || "author"}/${data.slug}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to publish");
     } finally {

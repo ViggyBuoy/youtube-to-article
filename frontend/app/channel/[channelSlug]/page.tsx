@@ -141,7 +141,7 @@ export default async function ChannelProfilePage({ params }: PageProps) {
             return (
               <Link
                 key={a.slug}
-                href={`/articles/${a.slug}`}
+                href={`/articles/${a.channel_slug || "author"}/${a.slug}`}
                 className="au-article-card"
               >
                 <div className="au-article-img">

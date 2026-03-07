@@ -5,10 +5,10 @@ import Link from "next/link";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-const LANG_BADGE: Record<string, { cls: string; label: string }> = {
-  english: { cls: "lang-badge-en", label: "English" },
-  hindi: { cls: "lang-badge-hi", label: "Hindi" },
-  hinglish: { cls: "lang-badge-hing", label: "Hinglish" },
+const SENTIMENT_BADGE: Record<string, { cls: string; label: string }> = {
+  bullish: { cls: "sentiment-bullish", label: "Bullish" },
+  neutral: { cls: "sentiment-neutral", label: "Neutral" },
+  bearish: { cls: "sentiment-bearish", label: "Bearish" },
 };
 
 const CATEGORY_TABS = [
@@ -53,11 +53,17 @@ interface Article {
   thumbnail: string;
   duration: number;
   language: string;
+  sentiment?: string;
+  sentiment_score?: number;
   tags?: string;
   created_at: string;
 }
 
 /* ── helpers ────────────────────────────────────────────── */
+
+function articleUrl(a: Article): string {
+  return `/articles/${a.channel_slug || "author"}/${a.slug}`;
+}
 
 function formatTime(dateStr: string): string {
   const d = new Date(dateStr + "Z");
@@ -86,8 +92,26 @@ function timeAgo(dateStr: string): string {
   });
 }
 
-function langOf(a: Article) {
-  return LANG_BADGE[a.language] || { cls: "", label: a.language };
+function sentimentOf(a: Article) {
+  const s = a.sentiment || "neutral";
+  return SENTIMENT_BADGE[s] || SENTIMENT_BADGE.neutral;
+}
+
+function SentimentMeter({ sentiment, score }: { sentiment: string; score: number }) {
+  const s = sentiment || "neutral";
+  const info = SENTIMENT_BADGE[s] || SENTIMENT_BADGE.neutral;
+  return (
+    <span className={`cd-sentiment-badge ${info.cls}`}>
+      {info.label}
+      <span className="cd-sentiment-meter">
+        <span
+          className={`cd-sentiment-fill cd-sentiment-fill-${s}`}
+          style={{ width: `${score}%` }}
+        />
+      </span>
+      <span className="cd-sentiment-score">{score}</span>
+    </span>
+  );
 }
 
 /* ── page ───────────────────────────────────────────────── */
@@ -102,13 +126,13 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/articles`, { cache: "no-store" })
+    fetch(`${API_BASE}/api/articles`)
       .then((r) => (r.ok ? r.json() : { articles: [] }))
       .then((d) => setArticles(d.articles || []))
       .catch(() => setArticles([]))
       .finally(() => setLoading(false));
 
-    fetch(`${API_BASE}/api/tags`, { cache: "no-store" })
+    fetch(`${API_BASE}/api/tags`)
       .then((r) => (r.ok ? r.json() : { tags: [] }))
       .then((d) => setTags((d.tags || []).slice(0, 15)))
       .catch(() => setTags([]));
@@ -125,7 +149,6 @@ export default function HomePage() {
   const activeTab = CATEGORY_TABS.find((t) => t.key === category) || CATEGORY_TABS[0];
   let filtered = articles;
 
-  // Category filter by tags
   if (activeTab.tags.length > 0) {
     filtered = filtered.filter((a) => {
       const articleTags = (a.tags || "").toLowerCase().split(",").map((t) => t.trim());
@@ -135,7 +158,6 @@ export default function HomePage() {
     });
   }
 
-  // Search filter
   if (searchQuery.trim()) {
     const q = searchQuery.toLowerCase();
     filtered = filtered.filter((a) => a.title.toLowerCase().includes(q));
@@ -145,12 +167,12 @@ export default function HomePage() {
   const sideList = filtered.slice(1, 5);
   const gridArticles = filtered.slice(5);
 
-  const langCounts = articles.reduce<Record<string, number>>((acc, a) => {
-    acc[a.language] = (acc[a.language] || 0) + 1;
+  const sentimentCounts = articles.reduce<Record<string, number>>((acc, a) => {
+    const s = a.sentiment || "neutral";
+    acc[s] = (acc[s] || 0) + 1;
     return acc;
   }, {});
 
-  /* loading */
   if (loading) {
     return (
       <div className="cp-page">
@@ -161,7 +183,6 @@ export default function HomePage() {
     );
   }
 
-  /* empty */
   if (articles.length === 0) {
     return (
       <div className="cp-page">
@@ -211,45 +232,40 @@ export default function HomePage() {
 
           <div className="cd-left-date">Today</div>
 
-          {articles.slice(0, 8).map((a) => {
-            const li = langOf(a);
-            return (
-              <Link
-                key={a.slug}
-                href={`/articles/${a.slug}`}
-                className="cd-latest-item"
-              >
-                <span className="cd-latest-time">
-                  {formatTime(a.created_at)}
-                </span>
-                <div className="cd-latest-badges">
-                  <span className={`cd-lang-pill ${li.cls}`}>{li.label}</span>
-                </div>
-                <h4 className="cd-latest-title">{a.title}</h4>
-                <p className="cd-latest-channel">
-                  By{" "}
-                  <Link
-                    href={`/@${a.channel_slug}`}
-                    className="cd-author-link"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {a.channel}
-                  </Link>
-                </p>
-              </Link>
-            );
-          })}
+          {articles.slice(0, 8).map((a) => (
+            <Link
+              key={a.slug}
+              href={articleUrl(a)}
+              className="cd-latest-item"
+            >
+              <span className="cd-latest-time">
+                {formatTime(a.created_at)}
+              </span>
+              <div className="cd-latest-badges">
+                <SentimentMeter sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
+              </div>
+              <h4 className="cd-latest-title">{a.title}</h4>
+              <p className="cd-latest-channel">
+                By{" "}
+                <Link
+                  href={`/@${a.channel_slug}`}
+                  className="cd-author-link"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {a.channel}
+                </Link>
+              </p>
+            </Link>
+          ))}
         </aside>
 
         {/* ─── MAIN CONTENT ─── */}
         <main className="cd-main">
-          {/* header */}
           <div className="cd-feat-head">
             <h2>Featured Stories</h2>
             <span className="cd-view-all">View all stories &rarr;</span>
           </div>
 
-          {/* Category tabs + search */}
           <div className="cd-category-tabs">
             {CATEGORY_TABS.map((tab) => (
               <button
@@ -285,19 +301,16 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* hero + side list */}
           {featured && (
             <div className="cd-hero-row">
               <Link
-                href={`/articles/${featured.slug}`}
+                href={articleUrl(featured)}
                 className="cd-hero-card"
               >
                 <div className="cd-hero-img">
                   <img src={featured.thumbnail} alt={featured.title} />
                 </div>
-                <span className="cd-hero-cat">
-                  {langOf(featured).label}
-                </span>
+                <SentimentMeter sentiment={featured.sentiment || "neutral"} score={featured.sentiment_score ?? 50} />
                 <h3 className="cd-hero-title">{featured.title}</h3>
                 <span className="cd-hero-time">
                   {timeAgo(featured.created_at)}
@@ -309,12 +322,10 @@ export default function HomePage() {
                   {sideList.map((a) => (
                     <Link
                       key={a.slug}
-                      href={`/articles/${a.slug}`}
+                      href={articleUrl(a)}
                       className="cd-side-item"
                     >
-                      <span className="cd-side-cat">
-                        {langOf(a).label}
-                      </span>
+                      <SentimentMeter sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                       <h4 className="cd-side-title">{a.title}</h4>
                     </Link>
                   ))}
@@ -323,18 +334,18 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* article grid */}
           {gridArticles.length > 0 && (
             <div className="cd-grid">
               {gridArticles.map((a) => (
                 <Link
                   key={a.slug}
-                  href={`/articles/${a.slug}`}
+                  href={articleUrl(a)}
                   className="cd-grid-card"
                 >
                   <div className="cd-grid-img">
                     <img src={a.thumbnail} alt={a.title} />
                   </div>
+                  <SentimentMeter sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                   <h4 className="cd-grid-title">{a.title}</h4>
                   <p className="cd-grid-meta">
                     <Link
@@ -353,24 +364,22 @@ export default function HomePage() {
 
         {/* ─── RIGHT SIDEBAR ─── */}
         <aside className="cd-right">
-          {/* Stats */}
           <div className="cd-stats">
             <h4 className="cd-stats-head">Article Stats</h4>
             <div className="cd-stat-row">
               <span>Total Articles</span>
               <strong>{articles.length}</strong>
             </div>
-            {Object.entries(langCounts).map(([lang, count]) => (
-              <div key={lang} className="cd-stat-row">
-                <span className={`cd-lang-pill ${LANG_BADGE[lang]?.cls || ""}`}>
-                  {LANG_BADGE[lang]?.label || lang}
+            {Object.entries(sentimentCounts).map(([sentiment, count]) => (
+              <div key={sentiment} className="cd-stat-row">
+                <span className={`cd-sentiment-pill ${SENTIMENT_BADGE[sentiment]?.cls || ""}`}>
+                  {SENTIMENT_BADGE[sentiment]?.label || sentiment}
                 </span>
                 <strong>{count}</strong>
               </div>
             ))}
           </div>
 
-          {/* Popular Tags */}
           {tags.length > 0 && (
             <div className="cd-tags-section">
               <h4 className="cd-stats-head">Popular Tags</h4>
@@ -388,12 +397,11 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Latest highlight */}
           {articles[0] && (
             <div className="cd-highlight">
               <h4 className="cd-stats-head">Latest Published</h4>
               <Link
-                href={`/articles/${articles[0].slug}`}
+                href={articleUrl(articles[0])}
                 className="cd-highlight-card"
               >
                 <img src={articles[0].thumbnail} alt={articles[0].title} />
@@ -404,7 +412,6 @@ export default function HomePage() {
         </aside>
       </div>
 
-      {/* footer */}
       <footer className="cd-footer">
         <div className="cd-footer-brand">
           Chain<span style={{ color: "var(--cp-accent)" }}>.</span>Pulse
