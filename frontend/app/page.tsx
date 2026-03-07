@@ -127,6 +127,31 @@ function SentimentGauge({ sentiment, score }: { sentiment: string; score: number
   );
 }
 
+/* ── scroll reveal hook ─────────────────────────────────── */
+
+function useScrollReveal() {
+  useEffect(() => {
+    const els = document.querySelectorAll(".cd-reveal");
+    if (!els.length) return;
+    // Reset: hide all initially
+    els.forEach((el) => (el as HTMLElement).classList.add("cd-reveal-hidden"));
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            (e.target as HTMLElement).classList.add("cd-reveal-visible");
+            io.unobserve(e.target);
+          }
+        });
+      },
+      { threshold: 0.1, rootMargin: "0px 0px -40px 0px" }
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  });
+}
+
 /* ── page ───────────────────────────────────────────────── */
 
 export default function HomePage() {
@@ -137,6 +162,8 @@ export default function HomePage() {
   const [coins, setCoins] = useState<Coin[]>([]);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+
+  useScrollReveal();
 
   useEffect(() => {
     fetch(`${API_BASE}/api/articles`)
@@ -292,10 +319,10 @@ export default function HomePage() {
               href={articleUrl(a)}
               className="cd-latest-item"
             >
-              <span className="cd-latest-time">
-                {formatTime(a.created_at)}
-              </span>
-              <div className="cd-latest-badges">
+              <div className="cd-latest-top-row">
+                <span className="cd-latest-time">
+                  {formatTime(a.created_at)}
+                </span>
                 <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
               </div>
               <h4 className="cd-latest-title">{a.title}</h4>
@@ -359,12 +386,11 @@ export default function HomePage() {
             <div className="cd-hero-row">
               <Link
                 href={articleUrl(featured)}
-                className="cd-hero-card"
+                className="cd-hero-card cd-reveal"
               >
                 <div className="cd-hero-img">
                   <img src={featured.thumbnail} alt={featured.title} />
                 </div>
-                <SentimentGauge sentiment={featured.sentiment || "neutral"} score={featured.sentiment_score ?? 50} />
                 <h3 className="cd-hero-title">{featured.title}</h3>
                 <div className="cd-card-meta">
                   <span className="cd-card-author">
@@ -374,6 +400,7 @@ export default function HomePage() {
                     </Link>
                   </span>
                   <span className="cd-card-date">{formatTime(featured.created_at)}</span>
+                  <SentimentGauge sentiment={featured.sentiment || "neutral"} score={featured.sentiment_score ?? 50} />
                 </div>
               </Link>
 
@@ -383,17 +410,17 @@ export default function HomePage() {
                     <Link
                       key={a.slug}
                       href={articleUrl(a)}
-                      className="cd-side-item"
+                      className="cd-side-item cd-reveal"
                     >
                       <div className="cd-side-thumb">
                         <img src={a.thumbnail} alt={a.title} />
                       </div>
                       <div className="cd-side-body">
-                        <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                         <h4 className="cd-side-title">{a.title}</h4>
                         <div className="cd-card-meta">
                           <span className="cd-card-author">{a.channel}</span>
                           <span className="cd-card-date">{formatTime(a.created_at)}</span>
+                          <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                         </div>
                       </div>
                     </Link>
@@ -405,16 +432,16 @@ export default function HomePage() {
 
           {gridArticles.length > 0 && (
             <div className="cd-grid">
-              {gridArticles.map((a) => (
+              {gridArticles.map((a, i) => (
                 <Link
                   key={a.slug}
                   href={articleUrl(a)}
-                  className="cd-grid-card"
+                  className="cd-grid-card cd-reveal"
+                  style={{ animationDelay: `${i * 60}ms` }}
                 >
                   <div className="cd-grid-img">
                     <img src={a.thumbnail} alt={a.title} />
                   </div>
-                  <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                   <h4 className="cd-grid-title">{a.title}</h4>
                   <div className="cd-card-meta">
                     <span className="cd-card-author">
@@ -427,6 +454,7 @@ export default function HomePage() {
                       </Link>
                     </span>
                     <span className="cd-card-date">{formatTime(a.created_at)}</span>
+                    <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                   </div>
                 </Link>
               ))}
