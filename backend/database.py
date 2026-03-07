@@ -140,6 +140,12 @@ async def init_db():
         )
         print(f"[db] is_featured column verified")
 
+        # ── Category column migration ──
+        await conn.execute(
+            "ALTER TABLE articles ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'market-alpha'"
+        )
+        print(f"[db] Category column verified")
+
         # ── Settings table (key-value store) ──
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -175,17 +181,18 @@ async def insert_article(
     tags: str = "",
     sentiment: str = "neutral",
     sentiment_score: int = 50,
+    category: str = "market-alpha",
 ) -> dict:
     async with _pool.acquire() as conn:
         await conn.execute(
             """INSERT INTO articles
                (slug, title, meta_description, channel, channel_slug, channel_avatar,
                 thumbnail, duration, youtube_url, language, transcript, article, tags,
-                sentiment, sentiment_score)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)""",
+                sentiment, sentiment_score, category)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)""",
             slug, title, meta_description, channel, channel_slug, channel_avatar,
             thumbnail, duration, youtube_url, language, transcript, article, tags,
-            sentiment, sentiment_score,
+            sentiment, sentiment_score, category,
         )
     return await get_article_by_slug(slug)
 
@@ -195,7 +202,7 @@ async def get_all_articles() -> list[dict]:
         rows = await conn.fetch(
             "SELECT id, slug, title, meta_description, channel, channel_slug, "
             "channel_avatar, thumbnail, duration, language, tags, "
-            "sentiment, sentiment_score, is_featured, created_at "
+            "sentiment, sentiment_score, is_featured, category, created_at "
             "FROM articles ORDER BY is_featured DESC, created_at DESC"
         )
         return [_row_to_dict(row) for row in rows]

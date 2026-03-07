@@ -55,6 +55,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
           description: article.meta_description || article.title,
           url: articleUrl,
           siteName: "CryptoDailyInk",
+          locale: "en_US",
           images: ogImageUrl
             ? [
                 {
@@ -125,6 +126,17 @@ export default async function ArticlePage({ params }: PageProps) {
     ? `${API_BASE}/api/og-image/${article.slug}`
     : article.thumbnail;
 
+  /* Category display names for breadcrumb & structured data */
+  const CATEGORY_LABELS: Record<string, string> = {
+    "market-alpha": "Market Alpha",
+    "on-chain": "On-Chain Signals",
+    "regulations": "Regulatory Watch",
+    "defi": "DeFi & Yield",
+    "institutional": "Institutional Inflows",
+  };
+  const category = article.category || "market-alpha";
+  const categoryLabel = CATEGORY_LABELS[category] || "News";
+
   /* JSON-LD: NewsArticle schema for Google News & rich results */
   const newsArticleSchema = {
     "@context": "https://schema.org",
@@ -149,7 +161,7 @@ export default async function ArticlePage({ params }: PageProps) {
       "@id": articleUrl,
     },
     wordCount: wordCount,
-    articleSection: "Crypto News",
+    articleSection: categoryLabel,
     inLanguage: article.language === "hindi" ? "hi" : article.language === "hinglish" ? "hi-Latn" : "en",
     ...(article.youtube_url && {
       video: {
@@ -165,7 +177,7 @@ export default async function ArticlePage({ params }: PageProps) {
     }),
   };
 
-  /* JSON-LD: BreadcrumbList for search navigation */
+  /* JSON-LD: BreadcrumbList — Home > News > Category > Article */
   const breadcrumbSchema = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -179,12 +191,18 @@ export default async function ArticlePage({ params }: PageProps) {
       {
         "@type": "ListItem",
         position: 2,
-        name: article.channel,
-        item: `${SITE_URL}/@${article.channel_slug || "author"}`,
+        name: "News",
+        item: `${SITE_URL}`,
       },
       {
         "@type": "ListItem",
         position: 3,
+        name: categoryLabel,
+        item: `${SITE_URL}/tags/${category}`,
+      },
+      {
+        "@type": "ListItem",
+        position: 4,
         name: article.title,
         item: articleUrl,
       },

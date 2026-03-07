@@ -1137,18 +1137,36 @@ The article MUST follow this structure:
 2. Snippet Lead (The BLUF — 60-word direct answer)
 3. Body Content (Formatted with H2/H3 question-based headers, Bullets, Bold, Tables, Hyperlinks) — 600-1000 words
 4. FAQ Section (3 Questions with concise answers)
+5. Market Signal Box — End the article body with this exact structure:
+   ### Market Signal
+   A 2-3 sentence actionable takeaway summarizing the key market implication. Include specific levels, tickers, or timeframes where possible.
+
+═══ 5. TITLE & META DESCRIPTION TEMPLATES ═══
+
+* Title Template (The "GEO Hook"):
+  Format: "[Token/Topic] Alpha: [Key Event] & Market Impact"
+  Example: "Solana Alpha: Network Upgrade Spikes TPS & Market Impact"
+  Rules: plain text only, 50-80 characters, NO markdown/asterisks/quotes
+
+* Meta Description Template (The "GEO Answer"):
+  Format: "[Direct 120-char answer about what happened]. Stay ahead with real-time [Topic] analysis and institutional signals at Cryptodailyink."
+  Example: "Bitcoin hits $90k as spot ETF inflows surpass $1B daily. Stay ahead with real-time BTC analysis and institutional signals at Cryptodailyink."
+  Rules: 150-160 characters total, start with the direct answer, end with CTA
 
 STRICT CONSTRAINTS:
 * Title MUST be plain text only — NO markdown, asterisks, or quotes
+* Title MUST follow the "[Token/Topic] Alpha: [Event] & Market Impact" pattern
 * Do NOT copy phrases verbatim from the source — fully rewrite in original language
 * Maintain all factual accuracy — preserve key data points, numbers, quotes
+* Body MUST end with the "### Market Signal" box
 
-You MUST return valid JSON with exactly these six fields:
+You MUST return valid JSON with exactly these seven fields:
 {{
-  "title": "A viral, search-optimized headline (50-80 characters, plain text only)",
-  "meta_description": "Click-magnetic description with CTA (150-160 characters)",
-  "body": "The full article in Markdown following the structure above (600-1000 words, include FAQ section)",
+  "title": "Follow the Alpha title template (50-80 characters, plain text only)",
+  "meta_description": "Follow the GEO Answer template — direct answer + CTA (150-160 characters)",
+  "body": "The full article in Markdown following the structure above (600-1000 words, include FAQ section, end with Market Signal box)",
   "tags": "5-8 lowercase comma-separated crypto/topic tags relevant to this article (e.g. bitcoin,ethereum,defi,regulation,market-analysis)",
+  "category": "One of: market-alpha, on-chain, regulations, defi, institutional — the primary news category this article belongs to",
   "sentiment": "One of: bullish, neutral, bearish — based on overall market sentiment of the article",
   "sentiment_score": "A PRECISE integer from 0-100 reflecting exact sentiment intensity. DO NOT round to multiples of 5 or 10 — use granular values like 23, 67, 81, 14, 93, 42, 58, 76, etc. Scale: 0-15=very bearish, 16-35=bearish, 36-45=slightly bearish, 46-55=neutral, 56-65=slightly bullish, 66-85=bullish, 86-100=very bullish."
 }}
@@ -1184,17 +1202,22 @@ ARTICLE TO REWRITE:
             sentiment_score = max(0, min(100, sentiment_score))
         except (ValueError, TypeError):
             sentiment_score = 50
+        category = result.get("category", "market-alpha").strip().lower()
+        valid_categories = ("market-alpha", "on-chain", "regulations", "defi", "institutional")
+        if category not in valid_categories:
+            category = "market-alpha"
         return {
             "title": clean_title,
             "meta_description": result.get("meta_description", "").strip().strip('"'),
             "body": result.get("body", raw),
             "tags": _clean_tags(result.get("tags", "")),
+            "category": category,
             "sentiment": sentiment,
             "sentiment_score": sentiment_score,
         }
     except (json.JSONDecodeError, AttributeError) as e:
         print(f"[scraper] JSON parse failed ({e}), using raw text")
-        return {"title": original_title, "meta_description": "", "body": raw, "tags": "", "sentiment": "neutral", "sentiment_score": 50}
+        return {"title": original_title, "meta_description": "", "body": raw, "tags": "", "category": "market-alpha", "sentiment": "neutral", "sentiment_score": 50}
 
 
 async def _run_scrape_cycle():
@@ -1305,6 +1328,7 @@ async def _run_scrape_cycle():
                         tags=article_data.get("tags", ""),
                         sentiment=article_data.get("sentiment", "neutral"),
                         sentiment_score=article_data.get("sentiment_score", 50),
+                        category=article_data.get("category", "market-alpha"),
                     )
 
                     await insert_seen_url(url, source["id"], article_data["title"], "published")
