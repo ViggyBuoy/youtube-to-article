@@ -91,7 +91,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
+# Auto-include both www and non-www variants for every configured origin
+_raw_origins = os.environ.get("CORS_ORIGINS", "*").split(",")
+CORS_ORIGINS: list[str] = []
+for origin in _raw_origins:
+    origin = origin.strip()
+    if not origin:
+        continue
+    CORS_ORIGINS.append(origin)
+    # Ensure both www and apex variants are always allowed
+    if origin.startswith("https://www."):
+        apex = origin.replace("https://www.", "https://", 1)
+        if apex not in CORS_ORIGINS:
+            CORS_ORIGINS.append(apex)
+    elif origin.startswith("https://") and "://www." not in origin and origin != "*":
+        www = origin.replace("https://", "https://www.", 1)
+        if www not in CORS_ORIGINS:
+            CORS_ORIGINS.append(www)
 
 app.add_middleware(
     CORSMiddleware,
@@ -832,23 +848,38 @@ TRANSCRIPT TO PROCESS:
 # ── Slug generation ───────────────────────────────────────────────────────────
 
 def generate_slug(title: str, article: str) -> str:
-    """Use Gemini to extract long-tail keywords and create a URL slug."""
-    prompt = f"""Extract 5-8 long-tail SEO keywords from this article title and content.
-Return ONLY a single hyphen-separated slug string, lowercase, no special characters.
-Example output: how-to-trade-crypto-futures-in-inr-on-mudrex
+    """Use Gemini to create a short, keyword-focused URL slug (max 7 words)."""
+    prompt = f"""Create a SHORT URL slug for this article. Rules:
+- Maximum 5-7 words, hyphen-separated, lowercase
+- Include ONLY the core topic keywords (token names, key event, main subject)
+- Drop filler words (the, a, an, how, what, will, can, does, is, are, for, with, and, or, in, on, to, of)
+- Focus on what makes this article unique and searchable
+
+Examples:
+- "bitcoin-etf-sec-approval" (4 words)
+- "ethereum-merge-pos-upgrade" (4 words)
+- "fed-rate-cut-crypto-impact" (5 words)
+- "solana-memecoin-rally-analysis" (4 words)
+- "trump-bitcoin-reserve-executive-order" (5 words)
+
+Return ONLY the slug string, nothing else.
 
 Title: {title}
 
-Article (first 500 chars): {article[:500]}"""
+Article (first 300 chars): {article[:300]}"""
 
     response = gemini_client.models.generate_content(
         model="gemini-3.1-flash-lite-preview",
         contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=100),
+        config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=60),
     )
-    raw_slug = response.text.strip()
+    raw_slug = response.text.strip().strip('"').strip("'")
     slug = re.sub(r"[^a-z0-9-]", "", raw_slug.lower())
     slug = re.sub(r"-+", "-", slug).strip("-")
+    # Enforce max 7 words
+    parts = slug.split("-")
+    if len(parts) > 7:
+        slug = "-".join(parts[:7])
     return slug or f"article-{int(time.time())}"
 
 
