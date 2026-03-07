@@ -28,10 +28,12 @@ interface ConvertResult {
 
 const STEPS = [
   "Fetching video metadata...",
-  "Transcribing with Gemini 2.5 Pro...",
+  "Transcribing video...",
   "Generating SEO article...",
   "Creating AI thumbnail...",
 ];
+
+const COUNTDOWN_SECONDS = 180;
 
 export default function ConverterPage() {
   const router = useRouter();
@@ -41,6 +43,7 @@ export default function ConverterPage() {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [currentUrl, setCurrentUrl] = useState("");
+  const [countdown, setCountdown] = useState(COUNTDOWN_SECONDS);
   const [authed, setAuthed] = useState(false);
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState(false);
@@ -66,11 +69,16 @@ export default function ConverterPage() {
     setError(null);
     setResult(null);
     setStep(0);
+    setCountdown(COUNTDOWN_SECONDS);
     setCurrentUrl(url);
 
     const stepTimer = setInterval(() => {
       setStep((prev) => (prev < STEPS.length - 1 ? prev + 1 : prev));
     }, 8000);
+
+    const countdownTimer = setInterval(() => {
+      setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
 
     try {
       const res = await fetch(`${API_BASE}/api/convert`, {
@@ -90,6 +98,7 @@ export default function ConverterPage() {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       clearInterval(stepTimer);
+      clearInterval(countdownTimer);
       setLoading(false);
     }
   }
@@ -206,9 +215,42 @@ export default function ConverterPage() {
 
       <UrlForm onSubmit={handleSubmit} loading={loading} />
 
-      {/* Progress indicator */}
+      {/* Progress indicator with countdown */}
       {loading && (
         <div className="w-full max-w-md">
+          {/* Countdown timer */}
+          <div style={{
+            textAlign: "center",
+            marginBottom: 20,
+            padding: "12px 16px",
+            background: "#f9fafb",
+            borderRadius: 10,
+            border: "1px solid #e5e7eb",
+          }}>
+            <div style={{ fontSize: 32, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "#111" }}>
+              {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, "0")}
+            </div>
+            <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+              Estimated time remaining
+            </div>
+            {/* Progress bar */}
+            <div style={{
+              marginTop: 10,
+              height: 4,
+              borderRadius: 2,
+              background: "#e5e7eb",
+              overflow: "hidden",
+            }}>
+              <div style={{
+                height: "100%",
+                borderRadius: 2,
+                background: "#111",
+                width: `${((COUNTDOWN_SECONDS - countdown) / COUNTDOWN_SECONDS) * 100}%`,
+                transition: "width 1s linear",
+              }} />
+            </div>
+          </div>
+
           <div className="flex flex-col gap-3">
             {STEPS.map((label, i) => (
               <div key={label} className="flex items-center gap-3">
