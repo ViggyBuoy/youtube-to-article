@@ -154,7 +154,7 @@ function AdminDashboard({
   token: string;
   onLogout: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"articles" | "sources">("articles");
+  const [activeTab, setActiveTab] = useState<"articles" | "sources" | "settings">("articles");
   const [authors, setAuthors] = useState<Author[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
   const [sources, setSources] = useState<Source[]>([]);
@@ -163,6 +163,18 @@ function AdminDashboard({
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState("");
+
+  // Cookie / Settings state
+  const [cookieStatus, setCookieStatus] = useState<{
+    has_cookies: boolean;
+    cookie_preview: string;
+    cookie_saved_at: string | null;
+    health: { status: string; error: string | null; checked_at: string | null };
+  } | null>(null);
+  const [cookieText, setCookieText] = useState("");
+  const [cookieSaving, setCookieSaving] = useState(false);
+  const [cookieChecking, setCookieChecking] = useState(false);
+  const [cookieMsg, setCookieMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   // Sources state
   const [newSourceName, setNewSourceName] = useState("");
@@ -180,12 +192,15 @@ function AdminDashboard({
   async function loadData() {
     setLoading(true);
     try {
-      const [authorsRes, articlesRes, sourcesRes] = await Promise.all([
+      const [authorsRes, articlesRes, sourcesRes, cookiesRes] = await Promise.all([
         fetch(`${API_BASE}/api/authors`),
         fetch(`${API_BASE}/api/admin/articles`, {
           headers: authHeaders(token),
         }),
         fetch(`${API_BASE}/api/admin/sources`, {
+          headers: authHeaders(token),
+        }),
+        fetch(`${API_BASE}/api/admin/cookies`, {
           headers: authHeaders(token),
         }),
       ]);
@@ -205,10 +220,89 @@ function AdminDashboard({
         const d = await sourcesRes.json();
         setSources(d.sources || []);
       }
+      if (cookiesRes.ok) {
+        const d = await cookiesRes.json();
+        setCookieStatus(d);
+      }
     } catch {
       // ignore
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadCookieStatus() {
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/cookies`, {
+        headers: authHeaders(token),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setCookieStatus(d);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleExtractCookie() {
+    setCookieMsg(null);
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text || text.trim().length < 50) {
+        setCookieMsg({ type: "err", text: "Clipboard is empty or doesn't contain valid cookies. Copy cookies from the extension first." });
+        return;
+      }
+      setCookieText(text.trim());
+      // Auto-save to backend
+      setCookieSaving(true);
+      const res = await fetch(`${API_BASE}/api/admin/cookies`, {
+        method: "POST",
+        headers: authHeaders(token),
+        body: JSON.stringify({ cookies: text.trim() }),
+      });
+      if (res.ok) {
+        setCookieMsg({ type: "ok", text: "Cookies extracted and saved successfully!" });
+        await loadCookieStatus();
+      } else {
+        const d = await res.json().catch(() => null);
+        setCookieMsg({ type: "err", text: d?.detail || "Failed to save cookies" });
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "NotAllowedError") {
+        setCookieMsg({ type: "err", text: "Clipboard access denied. Please allow clipboard permissions and try again." });
+      } else {
+        setCookieMsg({ type: "err", text: "Failed to read clipboard. Make sure you copied the cookies first." });
+      }
+    } finally {
+      setCookieSaving(false);
+    }
+  }
+
+  async function handleCheckCookies() {
+    setCookieChecking(true);
+    setCookieMsg(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/cookies/check`, {
+        method: "POST",
+        headers: authHeaders(token),
+      });
+      if (res.ok) {
+        const result = await res.json();
+        setCookieMsg({
+          type: result.status === "valid" ? "ok" : "err",
+          text: result.status === "valid"
+            ? "Cookies are valid!"
+            : `Cookies are ${result.status}: ${result.error || "Unknown error"}`,
+        });
+        await loadCookieStatus();
+      } else {
+        setCookieMsg({ type: "err", text: "Failed to check cookies" });
+      }
+    } catch {
+      setCookieMsg({ type: "err", text: "Failed to reach server" });
+    } finally {
+      setCookieChecking(false);
     }
   }
 
@@ -483,6 +577,13 @@ function AdminDashboard({
           </button>
         </div>
 
+        {/* Cookie expiry warning banner */}
+        {cookieStatus?.health?.status === "expired" && (
+          <div className="adm-warning-banner">
+            &#9888; YouTube cookies have expired! Go to Settings &rarr; Extract Cookie to update them.
+          </div>
+        )}
+
         {/* Tab navigation */}
         <div className="adm-tabs">
           <button
@@ -498,6 +599,15 @@ function AdminDashboard({
             Sources
             {sources.length > 0 && (
               <span className="adm-tab-count">{sources.length}</span>
+            )}
+          </button>
+          <button
+            className={`adm-tab ${activeTab === "settings" ? "adm-tab-active" : ""}`}
+            onClick={() => setActiveTab("settings")}
+          >
+            Settings
+            {cookieStatus?.health?.status === "expired" && (
+              <span className="adm-tab-count" style={{ background: "#d92b2b" }}>!</span>
             )}
           </button>
         </div>
@@ -773,6 +883,109 @@ function AdminDashboard({
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Settings Tab ── */}
+        {activeTab === "settings" && (
+          <div className="adm-settings-panel">
+            <div className="adm-settings-card">
+              <h3 className="adm-section-title">YouTube Cookie Management</h3>
+              <p className="adm-settings-desc">
+                YouTube cookies are required for downloading audio via yt-dlp. When they expire,
+                article generation stops working. Use the button below to extract fresh cookies.
+              </p>
+
+              {/* Cookie status */}
+              <div className="adm-cookie-status-row">
+                <span className="adm-cookie-label">Status:</span>
+                <span className={`adm-cookie-dot adm-cookie-dot-${
+                  cookieStatus?.health?.status === "valid" ? "valid"
+                  : cookieStatus?.health?.status === "expired" ? "expired"
+                  : "unknown"
+                }`} />
+                <span className="adm-cookie-status-text">
+                  {cookieStatus?.health?.status === "valid" && "Valid"}
+                  {cookieStatus?.health?.status === "expired" && "Expired"}
+                  {cookieStatus?.health?.status === "not_set" && "Not Set"}
+                  {(cookieStatus?.health?.status === "unknown" || !cookieStatus) && "Unknown"}
+                </span>
+                {cookieStatus?.health?.checked_at && (
+                  <span className="adm-cookie-checked">
+                    Last checked: {new Date(cookieStatus.health.checked_at).toLocaleString()}
+                  </span>
+                )}
+              </div>
+
+              {cookieStatus?.has_cookies && cookieStatus?.cookie_saved_at && (
+                <div className="adm-cookie-saved-at">
+                  Cookies saved: {new Date(cookieStatus.cookie_saved_at + "Z").toLocaleString()}
+                </div>
+              )}
+
+              {/* Instructions */}
+              <div className="adm-cookie-instructions">
+                <strong>How to extract cookies:</strong>
+                <ol>
+                  <li>Open <a href="https://www.youtube.com" target="_blank" rel="noopener noreferrer">youtube.com</a> in another tab and make sure you are signed in</li>
+                  <li>Click the <strong>&quot;Get cookies.txt locally&quot;</strong> extension icon in your browser toolbar</li>
+                  <li>Click <strong>&quot;Copy&quot;</strong> in the extension popup to copy cookies to your clipboard</li>
+                  <li>Come back here and click <strong>&quot;Extract Cookie&quot;</strong> below — it will automatically read your clipboard and save</li>
+                </ol>
+              </div>
+
+              {/* Cookie preview */}
+              {(cookieText || cookieStatus?.cookie_preview) && (
+                <div className="adm-cookie-preview">
+                  <label className="adm-label">Cookie Preview</label>
+                  <div className="adm-cookie-textarea">
+                    {cookieText
+                      ? (cookieText.length > 120 ? cookieText.slice(0, 60) + "\n...\n" + cookieText.slice(-40) : cookieText)
+                      : cookieStatus?.cookie_preview || ""}
+                  </div>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="adm-cookie-actions">
+                <button
+                  className="adm-cookie-extract-btn"
+                  onClick={handleExtractCookie}
+                  disabled={cookieSaving}
+                >
+                  {cookieSaving ? "Saving..." : "Extract Cookie"}
+                </button>
+                <button
+                  className="adm-cookie-check-btn"
+                  onClick={handleCheckCookies}
+                  disabled={cookieChecking || !cookieStatus?.has_cookies}
+                >
+                  {cookieChecking ? "Checking..." : "Check Now"}
+                </button>
+              </div>
+
+              {/* Status message */}
+              {cookieMsg && (
+                <div className={`adm-cookie-msg adm-cookie-msg-${cookieMsg.type}`}>
+                  {cookieMsg.text}
+                </div>
+              )}
+
+              {/* Health error detail */}
+              {cookieStatus?.health?.status === "expired" && cookieStatus?.health?.error && (
+                <div className="adm-cookie-error-detail">
+                  Error: {cookieStatus.health.error}
+                </div>
+              )}
+            </div>
+
+            <div className="adm-settings-card">
+              <h3 className="adm-section-title">Auto Health Check</h3>
+              <p className="adm-settings-desc">
+                The system automatically validates YouTube cookies every 6 hours in the background.
+                If cookies expire, a warning banner will appear at the top of this dashboard.
+              </p>
             </div>
           </div>
         )}

@@ -2608,3 +2608,177 @@ body {
 @media (max-width: 900px) {
   .tags-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ── Admin Settings Tab ────────────────────────────────────────── */
+.adm-warning-banner {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  padding: 12px 20px;
+  font-family: var(--cp-sans);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 8px;
+  margin: 0 20px;
+}
+.adm-settings-panel {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 720px;
+}
+.adm-settings-card {
+  background: #fff;
+  border: 1px solid var(--cp-gray-200);
+  border-radius: 12px;
+  padding: 24px;
+}
+.adm-settings-desc {
+  font-family: var(--cp-sans);
+  font-size: 13px;
+  color: var(--cp-gray-600);
+  line-height: 1.6;
+  margin: 0 0 20px 0;
+}
+.adm-cookie-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.adm-cookie-label {
+  font-family: var(--cp-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--cp-gray-700);
+}
+.adm-cookie-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.adm-cookie-dot-valid { background: #16a34a; }
+.adm-cookie-dot-expired { background: #dc2626; }
+.adm-cookie-dot-unknown { background: #9ca3af; }
+.adm-cookie-status-text {
+  font-family: var(--cp-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cp-gray-800);
+}
+.adm-cookie-checked {
+  font-family: var(--cp-sans);
+  font-size: 12px;
+  color: var(--cp-gray-500);
+  margin-left: 8px;
+}
+.adm-cookie-saved-at {
+  font-family: var(--cp-sans);
+  font-size: 12px;
+  color: var(--cp-gray-500);
+  margin-bottom: 16px;
+}
+.adm-cookie-instructions {
+  background: var(--cp-gray-100);
+  border: 1px solid var(--cp-gray-200);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  font-family: var(--cp-sans);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--cp-gray-700);
+}
+.adm-cookie-instructions strong {
+  color: var(--cp-gray-900);
+  font-size: 13px;
+}
+.adm-cookie-instructions ol {
+  margin: 8px 0 0 0;
+  padding-left: 20px;
+}
+.adm-cookie-instructions a {
+  color: var(--cp-accent-3);
+  text-decoration: underline;
+}
+.adm-cookie-preview {
+  margin-bottom: 20px;
+}
+.adm-cookie-textarea {
+  font-family: var(--cp-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--cp-gray-600);
+  background: var(--cp-gray-100);
+  border: 1px solid var(--cp-gray-200);
+  border-radius: 6px;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 120px;
+  overflow-y: auto;
+  margin-top: 6px;
+}
+.adm-cookie-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.adm-cookie-extract-btn {
+  font-family: var(--cp-sans);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--cp-accent-3);
+  color: #fff;
+  transition: background 0.15s;
+}
+.adm-cookie-extract-btn:hover { background: #1558c5; }
+.adm-cookie-extract-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.adm-cookie-check-btn {
+  font-family: var(--cp-sans);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 24px;
+  border: 1px solid var(--cp-gray-300);
+  border-radius: 8px;
+  cursor: pointer;
+  background: #fff;
+  color: var(--cp-gray-700);
+  transition: all 0.15s;
+}
+.adm-cookie-check-btn:hover { background: var(--cp-gray-100); }
+.adm-cookie-check-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.adm-cookie-msg {
+  font-family: var(--cp-sans);
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+.adm-cookie-msg-ok {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+.adm-cookie-msg-err {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+.adm-cookie-error-detail {
+  font-family: var(--cp-mono);
+  font-size: 12px;
+  color: #991b1b;
+  background: #fef2f2;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid #fecaca;
+}

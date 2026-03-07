@@ -128,6 +128,16 @@ async def init_db():
         )
         print(f"[db] Sentiment columns verified")
 
+        # ── Settings table (key-value store) ──
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key        TEXT PRIMARY KEY,
+                value      TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        print(f"[db] Settings table verified")
+
 
 async def close_db():
     """Close the connection pool."""
@@ -368,3 +378,40 @@ async def get_articles_by_tag(tag: str, limit: int = 20) -> list[dict]:
         if tag in article_tags:
             results.append(_row_to_dict(row))
     return results
+
+
+# ── Settings ───────────────────────────────────────────────────────────────
+
+async def get_setting(key: str) -> Optional[str]:
+    """Get a setting value by key. Returns None if not found."""
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT value FROM settings WHERE key = $1", key
+        )
+        return row["value"] if row else None
+
+
+async def get_setting_with_timestamp(key: str) -> Optional[dict]:
+    """Get a setting value + updated_at timestamp."""
+    async with _pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT value, updated_at FROM settings WHERE key = $1", key
+        )
+        if not row:
+            return None
+        return {
+            "value": row["value"],
+            "updated_at": row["updated_at"].strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+
+async def upsert_setting(key: str, value: str) -> None:
+    """Insert or update a setting."""
+    async with _pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO settings (key, value, updated_at)
+               VALUES ($1, $2, NOW())
+               ON CONFLICT (key) DO UPDATE
+               SET value = $2, updated_at = NOW()""",
+            key, value,
+        )

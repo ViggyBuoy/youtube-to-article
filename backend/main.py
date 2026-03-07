@@ -44,6 +44,7 @@ from database import (
     insert_source, get_all_sources, toggle_source, delete_source,
     is_url_seen, insert_seen_url, get_recent_article_titles,
     get_all_tags, get_articles_by_tag,
+    get_setting, get_setting_with_timestamp, upsert_setting,
 )
 
 
@@ -214,9 +215,11 @@ LANGUAGE_INSTRUCTIONS = {
 
 # ── Step 1: Download audio from YouTube ───────────────────────────────────────
 
-def _get_cookies_file():
-    """Write YOUTUBE_COOKIES env var to a temp file and return the path."""
-    cookies = os.environ.get("YOUTUBE_COOKIES", "")
+def _get_cookies_file(db_cookies: str | None = None):
+    """Write cookies to a temp file and return the path.
+    Priority: db_cookies param > YOUTUBE_COOKIES env var.
+    """
+    cookies = db_cookies or os.environ.get("YOUTUBE_COOKIES", "")
     if not cookies:
         return None
     # Fix newlines that may get escaped in env vars
@@ -227,6 +230,50 @@ def _get_cookies_file():
     line_count = cookies.count("\n")
     print(f"[cookies] Written cookies file: {len(cookies)} chars, {line_count} lines")
     return path
+
+
+# Cached DB cookies (refreshed on save or every scrape cycle)
+_db_cookies_cache: str | None = None
+
+
+async def _load_db_cookies():
+    """Load cookies from DB settings table, cache in memory."""
+    global _db_cookies_cache
+    val = await get_setting("youtube_cookies")
+    _db_cookies_cache = val
+    return val
+
+
+def _get_cookies_file_with_db():
+    """Sync wrapper that uses cached DB cookies, falling back to env."""
+    return _get_cookies_file(db_cookies=_db_cookies_cache)
+
+
+async def _validate_youtube_cookies(cookie_text: str) -> dict:
+    """Test if cookies are valid by trying a yt-dlp info extract."""
+    cookie_path = _get_cookies_file(db_cookies=cookie_text)
+    if not cookie_path:
+        return {"valid": False, "error": "No cookies provided"}
+    try:
+        test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "cookiefile": cookie_path,
+            "extract_flat": True,
+            "socket_timeout": 15,
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(test_url, download=False)
+            if info and info.get("title"):
+                return {"valid": True, "error": None}
+            return {"valid": False, "error": "Could not extract video info"}
+    except Exception as e:
+        err_msg = str(e)
+        if "Sign in" in err_msg or "cookies" in err_msg.lower() or "login" in err_msg.lower():
+            return {"valid": False, "error": "Cookies expired or invalid"}
+        return {"valid": False, "error": err_msg[:200]}
 
 
 # ── Audio download: Cobalt (self-hosted, optional) + yt-dlp fallback ──────────
@@ -417,7 +464,7 @@ def download_audio(url: str) -> tuple[str, dict]:
 
     # ── Fallback: yt-dlp ──
     print(f"[download] Using yt-dlp...")
-    cookies_file = _get_cookies_file()
+    cookies_file = _get_cookies_file_with_db()
     output_path = os.path.join(tmp_dir, "audio.%(ext)s")
 
     last_error = None
@@ -1064,11 +1111,50 @@ async def _run_scrape_cycle():
     _log_scraper(f"Cycle complete: {published} published, {skipped} skipped")
 
 
+COOKIE_CHECK_INTERVAL = 6 * 3600  # 6 hours in seconds
+_last_cookie_check: float = 0
+
+
+async def _check_cookie_health():
+    """Check if YouTube cookies are still valid, store result in DB."""
+    global _last_cookie_check
+    now = time.time()
+    if now - _last_cookie_check < COOKIE_CHECK_INTERVAL:
+        return  # Not time yet
+    _last_cookie_check = now
+    print("[cookies] Running scheduled cookie health check...")
+    cookie_text = await get_setting("youtube_cookies")
+    if not cookie_text:
+        # Also check env var
+        cookie_text = os.environ.get("YOUTUBE_COOKIES", "")
+    if not cookie_text:
+        result = {"status": "not_set", "error": "No cookies configured", "checked_at": datetime.now(timezone.utc).isoformat()}
+        await upsert_setting("cookie_health", json.dumps(result))
+        print("[cookies] Health check: no cookies set")
+        return
+    validation = await _validate_youtube_cookies(cookie_text)
+    status = "valid" if validation["valid"] else "expired"
+    result = {
+        "status": status,
+        "error": validation.get("error"),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await upsert_setting("cookie_health", json.dumps(result))
+    _log_scraper(f"Cookie health check: {status}" + (f" ({validation['error']})" if validation.get("error") else ""))
+    print(f"[cookies] Health check result: {status}")
+
+
 async def _scraper_loop():
     """Background loop that runs scrape cycles every SCRAPE_INTERVAL seconds."""
     _log_scraper("Background loop started, waiting 10s for init...")
     await asyncio.sleep(10)
+    # Load DB cookies on startup
+    await _load_db_cookies()
     while True:
+        try:
+            await _check_cookie_health()
+        except Exception as e:
+            print(f"[cookies] Health check error: {e}")
         try:
             await _run_scrape_cycle()
         except Exception as e:
@@ -1089,7 +1175,7 @@ async def debug_formats(url: str):
     """Debug: see what formats YouTube returns on this server."""
     if not YOUTUBE_URL_PATTERN.match(url):
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
-    cookies_file = _get_cookies_file()
+    cookies_file = _get_cookies_file_with_db()
     results = {"yt_dlp_version": yt_dlp.version.__version__}
 
     for player_client in [["default"], ["mediaconnect"], ["tv_embedded"]]:
@@ -1368,4 +1454,109 @@ async def admin_trigger_scrape(user: str = Depends(_verify_admin_token)):
 async def admin_scraper_log(user: str = Depends(_verify_admin_token)):
     """Get recent scraper activity log for debugging."""
     return {"log": _scraper_log, "scraper_available": SCRAPER_AVAILABLE}
+
+
+# ── Admin Cookie Endpoints ──────────────────────────────────────────────────
+
+class SaveCookieRequest(BaseModel):
+    cookies: str
+
+
+@app.get("/api/admin/cookies")
+async def admin_get_cookie_status(user: str = Depends(_verify_admin_token)):
+    """Get current YouTube cookie status."""
+    cookie_data = await get_setting_with_timestamp("youtube_cookies")
+    health_data = await get_setting("cookie_health")
+
+    has_cookies = cookie_data is not None
+    cookie_preview = ""
+    cookie_saved_at = None
+    if cookie_data:
+        val = cookie_data["value"]
+        cookie_saved_at = cookie_data["updated_at"]
+        # Show first 40 chars + last 20 chars for preview (security)
+        if len(val) > 80:
+            cookie_preview = val[:40] + "..." + val[-20:]
+        else:
+            cookie_preview = val[:60] + "..."
+
+    health = {"status": "unknown", "error": None, "checked_at": None}
+    if health_data:
+        try:
+            health = json.loads(health_data)
+        except json.JSONDecodeError:
+            pass
+
+    # If cookies exist but no health check has been done, status is "unknown"
+    if has_cookies and health["status"] == "not_set":
+        health["status"] = "unknown"
+
+    return {
+        "has_cookies": has_cookies,
+        "cookie_preview": cookie_preview,
+        "cookie_saved_at": cookie_saved_at,
+        "health": health,
+    }
+
+
+@app.post("/api/admin/cookies")
+async def admin_save_cookies(req: SaveCookieRequest, user: str = Depends(_verify_admin_token)):
+    """Save YouTube cookies to the database."""
+    cookie_text = req.cookies.strip()
+    if not cookie_text:
+        raise HTTPException(status_code=400, detail="Cookies cannot be empty")
+    if len(cookie_text) < 50:
+        raise HTTPException(status_code=400, detail="Cookie text seems too short to be valid")
+
+    await upsert_setting("youtube_cookies", cookie_text)
+
+    # Update in-memory cache
+    global _db_cookies_cache
+    _db_cookies_cache = cookie_text
+
+    # Clear old health status so it gets rechecked
+    await upsert_setting("cookie_health", json.dumps({
+        "status": "unknown",
+        "error": None,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }))
+
+    return {"saved": True, "message": "Cookies saved successfully"}
+
+
+@app.post("/api/admin/cookies/check")
+async def admin_check_cookies(user: str = Depends(_verify_admin_token)):
+    """Force a cookie health check now."""
+    cookie_text = await get_setting("youtube_cookies")
+    if not cookie_text:
+        cookie_text = os.environ.get("YOUTUBE_COOKIES", "")
+    if not cookie_text:
+        return {"status": "not_set", "error": "No cookies configured", "checked_at": datetime.now(timezone.utc).isoformat()}
+
+    validation = await _validate_youtube_cookies(cookie_text)
+    status = "valid" if validation["valid"] else "expired"
+    result = {
+        "status": status,
+        "error": validation.get("error"),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await upsert_setting("cookie_health", json.dumps(result))
+
+    # Update the last check timestamp
+    global _last_cookie_check
+    _last_cookie_check = time.time()
+
+    return result
+
+
+@app.get("/api/cookies/health")
+async def public_cookie_health():
+    """Public endpoint to check cookie health status (for 6-hour polling)."""
+    health_data = await get_setting("cookie_health")
+    if not health_data:
+        return {"status": "unknown", "error": None, "checked_at": None}
+    try:
+        return json.loads(health_data)
+    except json.JSONDecodeError:
+        return {"status": "unknown", "error": None, "checked_at": None}
 

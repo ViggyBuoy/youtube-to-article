@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import UrlForm from "../../components/UrlForm";
 import ArticleView from "../../components/ArticleView";
@@ -40,6 +40,18 @@ export default function ConverterPage() {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [currentUrl, setCurrentUrl] = useState("");
+
+  // Silent 6-hour cookie health check
+  useEffect(() => {
+    const SIX_HOURS = 6 * 60 * 60 * 1000;
+    const lastCheck = localStorage.getItem("cookie_check_time");
+    const now = Date.now();
+    if (!lastCheck || now - parseInt(lastCheck, 10) > SIX_HOURS) {
+      fetch(`${API_BASE}/api/cookies/health`)
+        .then(() => localStorage.setItem("cookie_check_time", String(now)))
+        .catch(() => {});
+    }
+  }, []);
 
   async function handleSubmit(url: string, language: string) {
     setLoading(true);
