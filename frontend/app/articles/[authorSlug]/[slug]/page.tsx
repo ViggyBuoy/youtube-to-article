@@ -40,9 +40,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     const article = await fetchArticle(slug);
     if (article) {
       const articleUrl = `${SITE_URL}/articles/${authorSlug}/${slug}`;
-      // Use /api/og-image endpoint for social previews (base64 data URLs don't work for OG)
+      // Serve OG images through Vercel (always warm) instead of Render backend (cold-starts).
+      // base64 data URLs → frontend proxy; external URLs → use directly.
       const ogImageUrl = article.thumbnail?.startsWith("data:")
-        ? `${API_BASE}/api/og-image/${slug}`
+        ? `${SITE_URL}/api/og-image/${slug}`
         : article.thumbnail;
       return {
         title: `${article.title} | CryptoDailyInk`,
@@ -123,7 +124,7 @@ export default async function ArticlePage({ params }: PageProps) {
     ? new Date(article.created_at + "Z").toISOString()
     : new Date().toISOString();
   const ogImageUrl = article.thumbnail?.startsWith("data:")
-    ? `${API_BASE}/api/og-image/${article.slug}`
+    ? `${SITE_URL}/api/og-image/${article.slug}`
     : article.thumbnail;
 
   /* Category display names for breadcrumb & structured data */

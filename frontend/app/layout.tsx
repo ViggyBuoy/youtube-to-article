@@ -41,12 +41,21 @@ export const metadata: Metadata = {
     siteName: "CryptoDailyInk",
     type: "website",
     locale: "en_US",
+    images: [
+      {
+        url: `${SITE_URL}/opengraph-image`,
+        width: 1200,
+        height: 630,
+        alt: "CryptoDailyInk — Breaking Market Alpha & Crypto News",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "CryptoDailyInk | Breaking Market Alpha & Crypto News",
     description:
       "Real-time Alpha on Bitcoin, Ethereum, and Altcoins. Expert on-chain analysis and breaking DeFi updates.",
+    images: [`${SITE_URL}/opengraph-image`],
   },
   robots: {
     index: true,
