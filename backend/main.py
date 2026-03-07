@@ -465,23 +465,21 @@ def get_youtube_transcript(video_id: str) -> Optional[str]:
 
 
 def get_transcript_via_gemini(url: str) -> Optional[str]:
-    """Extract transcript from YouTube video using Gemini's native video understanding.
+    """Extract transcript from YouTube video using Gemini 2.5 Pro via Vertex AI.
 
-    Gemini can process YouTube URLs directly and transcribe the spoken content.
-    Uses gemini-2.0-flash for fast, cost-effective transcription.
+    Passes the YouTube URL directly to Gemini which can natively process
+    YouTube videos and return the spoken transcript.
     """
     try:
-        print(f"[transcript] Trying Gemini video transcription...")
+        print(f"[transcript] Gemini 2.5 Pro transcription: {url}")
         response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             contents=[
                 types.Content(
                     parts=[
                         types.Part.from_uri(file_uri=url, mime_type="video/*"),
                         types.Part(
-                            text="Transcribe this entire video word-for-word. Output ONLY the "
-                            "spoken transcript text, nothing else. No timestamps, no speaker "
-                            "labels, no formatting — just the raw spoken words exactly as said."
+                            text="I want word by word text of what the speaker is speaking in the video"
                         ),
                     ]
                 )
@@ -495,10 +493,10 @@ def get_transcript_via_gemini(url: str) -> Optional[str]:
         if len(text) < 100:
             print(f"[transcript] Gemini transcript too short ({len(text)} chars)")
             return None
-        print(f"[transcript] Gemini transcription OK: {len(text)} chars")
+        print(f"[transcript] Gemini 2.5 Pro transcription OK: {len(text)} chars")
         return text
     except Exception as e:
-        print(f"[transcript] Gemini transcription failed: {e}")
+        print(f"[transcript] Gemini 2.5 Pro transcription failed: {e}")
         return None
 
 
