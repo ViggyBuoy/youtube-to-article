@@ -77,6 +77,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
           description: article.meta_description || article.title,
           images: ogImageUrl ? [ogImageUrl] : [],
         },
+        // Slack rich unfurling labels (also used by some other clients)
+        other: {
+          "twitter:label1": "Author",
+          "twitter:data1": article.channel,
+          "twitter:label2": "Reading time",
+          "twitter:data2": `${Math.max(1, Math.round((article.article?.split(/\s+/).length || 200) / 200))} min read`,
+        },
       };
     }
   } catch {
