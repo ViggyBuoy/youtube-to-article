@@ -1413,8 +1413,8 @@ async def convert(req: ConvertRequest):
     url = req.url.strip()
     if not YOUTUBE_URL_PATTERN.match(url):
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
-    if not GEMINI_KEY:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not set")
+    if not GEMINI_KEY and not GCP_PROJECT:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY or GOOGLE_CLOUD_PROJECT must be set")
 
     video_id = _get_video_id(url)
     metadata = _fetch_metadata(url, video_id)
