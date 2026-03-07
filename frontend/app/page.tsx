@@ -176,8 +176,45 @@ export default function HomePage() {
   if (loading) {
     return (
       <div className="cp-page">
-        <div className="cd-empty">
-          <p className="cd-empty-title">Loading articles&hellip;</p>
+        {/* Show ticker even while articles load */}
+        {coins.length > 0 && (
+          <div className="cd-ticker-bar">
+            <div className="cd-ticker-track">
+              {[...coins, ...coins].map((c, i) => {
+                const up = c.price_change_percentage_24h >= 0;
+                return (
+                  <div key={`${c.id}-${i}`} className="cd-ticker-card">
+                    <div className="cd-ticker-card-row1">
+                      <img src={c.image} alt={c.name} className="cd-ticker-logo" />
+                      <span className="cd-ticker-name">{c.name}</span>
+                      <span className="cd-ticker-symbol">{c.symbol.toUpperCase()}</span>
+                    </div>
+                    <div className="cd-ticker-card-row2">
+                      <span className="cd-ticker-price">
+                        ${c.current_price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      <span className={`cd-ticker-change ${up ? "cd-ticker-up" : "cd-ticker-down"}`}>
+                        {up ? "\u25B2" : "\u25BC"} {Math.abs(c.price_change_percentage_24h).toFixed(2)}%
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <div className="cd-skeleton-wrap">
+          <div className="cd-skeleton-bar" style={{ width: "40%", height: 24, marginBottom: 16 }} />
+          <div className="cd-skeleton-bar" style={{ width: "100%", height: 280, borderRadius: 6, marginBottom: 16 }} />
+          <div className="cd-skeleton-row">
+            {[1,2,3].map(i => (
+              <div key={i} className="cd-skeleton-card">
+                <div className="cd-skeleton-bar" style={{ width: "100%", height: 140, borderRadius: 4, marginBottom: 10 }} />
+                <div className="cd-skeleton-bar" style={{ width: "80%", height: 16, marginBottom: 6 }} />
+                <div className="cd-skeleton-bar" style={{ width: "50%", height: 12 }} />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -205,16 +242,20 @@ export default function HomePage() {
             {[...coins, ...coins].map((c, i) => {
               const up = c.price_change_percentage_24h >= 0;
               return (
-                <div key={`${c.id}-${i}`} className="cd-ticker-item">
-                  <img src={c.image} alt={c.name} className="cd-ticker-logo" />
-                  <span className="cd-ticker-name">{c.name}</span>
-                  <span className="cd-ticker-symbol">{c.symbol.toUpperCase()}</span>
-                  <span className="cd-ticker-price">
-                    ${c.current_price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <span className={`cd-ticker-change ${up ? "cd-ticker-up" : "cd-ticker-down"}`}>
-                    {up ? "\u25B2" : "\u25BC"} {Math.abs(c.price_change_percentage_24h).toFixed(2)}%
-                  </span>
+                <div key={`${c.id}-${i}`} className="cd-ticker-card">
+                  <div className="cd-ticker-card-row1">
+                    <img src={c.image} alt={c.name} className="cd-ticker-logo" />
+                    <span className="cd-ticker-name">{c.name}</span>
+                    <span className="cd-ticker-symbol">{c.symbol.toUpperCase()}</span>
+                  </div>
+                  <div className="cd-ticker-card-row2">
+                    <span className="cd-ticker-price">
+                      ${c.current_price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    <span className={`cd-ticker-change ${up ? "cd-ticker-up" : "cd-ticker-down"}`}>
+                      {up ? "\u25B2" : "\u25BC"} {Math.abs(c.price_change_percentage_24h).toFixed(2)}%
+                    </span>
+                  </div>
                 </div>
               );
             })}

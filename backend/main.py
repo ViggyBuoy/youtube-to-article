@@ -894,7 +894,7 @@ You MUST return valid JSON with exactly these six fields:
   "body": "The full rewritten article in Markdown (600-1000 words)",
   "tags": "5-8 lowercase comma-separated crypto/topic tags relevant to this article (e.g. bitcoin,ethereum,defi,regulation,market-analysis)",
   "sentiment": "One of: bullish, neutral, bearish — based on overall market sentiment of the article",
-  "sentiment_score": "Integer 0-100 where 0=extremely bearish, 50=neutral, 100=extremely bullish"
+  "sentiment_score": "A PRECISE integer from 0-100 reflecting exact sentiment intensity. DO NOT round to multiples of 5 or 10 — use granular values like 23, 67, 81, 14, 93, 42, 58, 76, etc. Scale: 0-15=very bearish, 16-35=bearish, 36-45=slightly bearish, 46-55=neutral, 56-65=slightly bullish, 66-85=bullish, 86-100=very bullish. Analyze the specific language, data points, and tone to pick a PRECISE number."
 }}
 
 Return ONLY the JSON object, no markdown code fences, no extra text.

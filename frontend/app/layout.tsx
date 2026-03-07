@@ -34,7 +34,8 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0a0a0a]`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        style={{ background: "#fafafa" }}
       >
         <Navbar />
         {children}

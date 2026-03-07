@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import type { Metadata } from "next";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
@@ -19,6 +20,55 @@ const SENTIMENT_BADGE: Record<string, { cls: string; label: string }> = {
 
 interface PageProps {
   params: Promise<{ authorSlug: string; slug: string }>;
+}
+
+/* ── OG Meta Tags for social sharing ── */
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug, authorSlug } = await params;
+  try {
+    const res = await fetch(`${API_BASE}/api/articles/${slug}`, {
+      next: { revalidate: 60 },
+    });
+    if (res.ok) {
+      const article = await res.json();
+      const articleUrl = `${SITE_URL}/articles/${authorSlug}/${slug}`;
+      return {
+        title: `${article.title} | ChainPulse`,
+        description: article.meta_description || article.title,
+        openGraph: {
+          title: article.title,
+          description: article.meta_description || article.title,
+          url: articleUrl,
+          siteName: "ChainPulse",
+          images: article.thumbnail
+            ? [
+                {
+                  url: article.thumbnail,
+                  width: 1200,
+                  height: 630,
+                  alt: article.title,
+                },
+              ]
+            : [],
+          type: "article",
+          authors: [article.channel],
+          publishedTime: article.created_at ? new Date(article.created_at + "Z").toISOString() : undefined,
+        },
+        twitter: {
+          card: "summary_large_image",
+          title: article.title,
+          description: article.meta_description || article.title,
+          images: article.thumbnail ? [article.thumbnail] : [],
+        },
+      };
+    }
+  } catch {
+    // Fallback
+  }
+  return {
+    title: "Article | ChainPulse",
+    description: "Crypto, Forex & Market News — Powered by AI",
+  };
 }
 
 export default async function ArticlePage({ params }: PageProps) {

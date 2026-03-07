@@ -14,14 +14,18 @@ export async function middleware(request: NextRequest) {
   }
 
   // Redirect old /articles/SLUG to /articles/AUTHOR/SLUG
-  // Match /articles/X where X has no further slashes (single segment = old format)
+  // Only matches single-segment paths (no slash after slug)
   const oldArticleMatch = pathname.match(/^\/articles\/([^/]+)$/);
   if (oldArticleMatch) {
     const slug = oldArticleMatch[1];
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
       const res = await fetch(`${API_BASE}/api/articles/${slug}`, {
         headers: { Accept: "application/json" },
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       if (res.ok) {
         const article = await res.json();
         const authorSlug = article.channel_slug || "author";
@@ -30,7 +34,7 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(url, 301);
       }
     } catch {
-      // API unavailable, fall through
+      // API unavailable or timeout, fall through
     }
   }
 
@@ -38,5 +42,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  // Only run middleware for @-routes and old /articles/slug routes
+  matcher: ["/@:path*", "/articles/:slug"],
 };
