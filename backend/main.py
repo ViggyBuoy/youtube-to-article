@@ -36,6 +36,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import random
+from io import BytesIO
+from PIL import Image
 
 from database import (
     init_db, close_db, insert_article, get_all_articles, get_article_by_slug,
@@ -250,7 +252,10 @@ def _get_cookies_file_with_db():
 
 
 async def _validate_youtube_cookies(cookie_text: str) -> dict:
-    """Test if cookies are valid by trying a yt-dlp info extract."""
+    """Test if cookies are valid by trying a yt-dlp info extract.
+    Format errors are treated as VALID because they mean YouTube responded
+    with video data — the cookies work, just format selection failed.
+    """
     cookie_path = _get_cookies_file(db_cookies=cookie_text)
     if not cookie_path:
         return {"valid": False, "error": "No cookies provided"}
@@ -261,8 +266,9 @@ async def _validate_youtube_cookies(cookie_text: str) -> dict:
             "no_warnings": True,
             "skip_download": True,
             "cookiefile": cookie_path,
-            "extract_flat": True,
+            "extract_flat": "in_playlist",
             "socket_timeout": 15,
+            "format": "best",
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(test_url, download=False)
@@ -271,8 +277,15 @@ async def _validate_youtube_cookies(cookie_text: str) -> dict:
             return {"valid": False, "error": "Could not extract video info"}
     except Exception as e:
         err_msg = str(e)
+        # Cookie/auth errors → expired
         if "Sign in" in err_msg or "cookies" in err_msg.lower() or "login" in err_msg.lower():
             return {"valid": False, "error": "Cookies expired or invalid"}
+        # Format errors mean YouTube DID respond — cookies are fine
+        if "format" in err_msg.lower() or "Requested format" in err_msg:
+            return {"valid": True, "error": None}
+        # Network/timeout errors → unknown, not expired
+        if "timed out" in err_msg.lower() or "urlopen" in err_msg.lower():
+            return {"valid": False, "error": f"Network error: {err_msg[:150]}"}
         return {"valid": False, "error": err_msg[:200]}
 
 
@@ -755,13 +768,32 @@ def generate_thumbnail(image_url: str, article_title: str = "") -> str:
             ),
         )
 
-        # Extract the generated image and return as base64 data URL
+        # Extract the generated image, compress, and return as base64 data URL
         for part in response.candidates[0].content.parts:
             if part.inline_data and part.inline_data.mime_type.startswith("image/"):
-                mime = part.inline_data.mime_type
-                b64 = base64.b64encode(part.inline_data.data).decode()
+                raw_bytes = part.inline_data.data
+                raw_size = len(raw_bytes)
+                # Compress with Pillow: resize to max 1200x630, JPEG quality 70
+                try:
+                    img = Image.open(BytesIO(raw_bytes))
+                    img = img.convert("RGB")  # Ensure JPEG-compatible mode
+                    # Resize if larger than target
+                    target_w, target_h = 1200, 630
+                    if img.width > target_w or img.height > target_h:
+                        img.thumbnail((target_w, target_h), Image.LANCZOS)
+                    buf = BytesIO()
+                    img.save(buf, format="JPEG", quality=70, optimize=True)
+                    compressed = buf.getvalue()
+                    mime = "image/jpeg"
+                    print(f"[thumbnail] Compressed: {raw_size} -> {len(compressed)} bytes ({100 - len(compressed)*100//raw_size}% reduction)")
+                except Exception as compress_err:
+                    print(f"[thumbnail] Compression failed ({compress_err}), using raw")
+                    compressed = raw_bytes
+                    mime = part.inline_data.mime_type
+
+                b64 = base64.b64encode(compressed).decode()
                 data_url = f"data:{mime};base64,{b64}"
-                print(f"[thumbnail] SUCCESS: generated {len(part.inline_data.data)} bytes as data URL")
+                print(f"[thumbnail] SUCCESS: {len(compressed)} bytes as data URL")
                 return data_url
 
         # No image part found – fall back
