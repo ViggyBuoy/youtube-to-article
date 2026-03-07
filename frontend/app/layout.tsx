@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "YouTube to Article",
-  description: "Turn any YouTube video into an SEO-optimized blog article",
+  title: "ChainPulse",
+  description: "Crypto, Forex & Market News — Powered by AI",
 };
 
 export default function RootLayout({

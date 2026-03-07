@@ -796,8 +796,9 @@ def _fetch_rss_entries(rss_url: str) -> list[dict]:
 
 
 _SCRAPER_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; CryptoNewsBot/1.0; +https://github.com)",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
 
@@ -971,68 +972,78 @@ async def _run_scrape_cycle():
                     skipped += 1
                     continue
 
-                # Extract article text
-                _log_scraper(f"Extracting: {title[:50]}")
-                text, og_image = await asyncio.to_thread(_extract_article_text, url)
-                if not text:
-                    _log_scraper(f"Skip (no text): {title[:50]}", "warn")
-                    await insert_seen_url(url, source["id"], title, "skipped_dup")
+                try:
+                    # Extract article text
+                    _log_scraper(f"Extracting: {title[:50]}")
+                    text, og_image = await asyncio.to_thread(_extract_article_text, url)
+                    if not text:
+                        _log_scraper(f"Skip (no text): {title[:50]}", "warn")
+                        await insert_seen_url(url, source["id"], title, "skipped_dup")
+                        skipped += 1
+                        continue
+
+                    # Rewrite with Gemini (pass original URL for source linking)
+                    _log_scraper(f"Rewriting: {title[:50]}")
+                    article_data = await asyncio.to_thread(
+                        generate_rewritten_article, text, title, source["name"], url
+                    )
+
+                    # Generate slug
+                    slug = await asyncio.to_thread(generate_slug, article_data["title"], article_data["body"])
+                    existing = await get_article_by_slug(slug)
+                    if existing:
+                        slug = f"{slug}-{int(time.time())}"
+
+                    # Generate AI comic-book thumbnail from og:image
+                    if og_image:
+                        _log_scraper(f"Generating thumbnail: {title[:40]}")
+                        thumbnail = await asyncio.to_thread(
+                            generate_thumbnail, og_image, article_data["title"]
+                        )
+                    else:
+                        thumbnail = ""
+
+                    # Random American journalist name as author
+                    author_name = random.choice(_AMERICAN_AUTHOR_NAMES)
+
+                    # Publish
+                    channel_slug = generate_channel_slug(author_name)
+                    await insert_article(
+                        slug=slug,
+                        title=article_data["title"],
+                        meta_description=article_data["meta_description"],
+                        channel=author_name,
+                        channel_slug=channel_slug,
+                        channel_avatar="",
+                        thumbnail=thumbnail,
+                        duration=0,
+                        youtube_url=url,
+                        language="english",
+                        transcript=text,
+                        article=article_data["body"],
+                        tags=article_data.get("tags", ""),
+                    )
+
+                    await insert_seen_url(url, source["id"], article_data["title"], "published")
+                    recent_titles.append(article_data["title"])
+                    published += 1
+                    source_published += 1
+                    _log_scraper(f"Published: '{article_data['title'][:60]}' by {author_name}")
+
+                    # Rate limit: wait between articles to avoid Gemini API exhaustion
+                    await asyncio.sleep(15)
+
+                except Exception as entry_err:
+                    _log_scraper(f"Error processing entry '{title[:50]}': {entry_err}", "error")
                     skipped += 1
+                    try:
+                        await insert_seen_url(url, source["id"], title, "error")
+                    except Exception:
+                        pass
                     continue
 
-                # Rewrite with Gemini (pass original URL for source linking)
-                _log_scraper(f"Rewriting: {title[:50]}")
-                article_data = await asyncio.to_thread(
-                    generate_rewritten_article, text, title, source["name"], url
-                )
-
-                # Generate slug
-                slug = await asyncio.to_thread(generate_slug, article_data["title"], article_data["body"])
-                existing = await get_article_by_slug(slug)
-                if existing:
-                    slug = f"{slug}-{int(time.time())}"
-
-                # Generate AI comic-book thumbnail from og:image
-                if og_image:
-                    _log_scraper(f"Generating thumbnail: {title[:40]}")
-                    thumbnail = await asyncio.to_thread(
-                        generate_thumbnail, og_image, article_data["title"]
-                    )
-                else:
-                    thumbnail = ""
-
-                # Random American journalist name as author
-                author_name = random.choice(_AMERICAN_AUTHOR_NAMES)
-
-                # Publish
-                channel_slug = generate_channel_slug(author_name)
-                await insert_article(
-                    slug=slug,
-                    title=article_data["title"],
-                    meta_description=article_data["meta_description"],
-                    channel=author_name,
-                    channel_slug=channel_slug,
-                    channel_avatar="",
-                    thumbnail=thumbnail,
-                    duration=0,
-                    youtube_url=url,
-                    language="english",
-                    transcript=text,
-                    article=article_data["body"],
-                    tags=article_data.get("tags", ""),
-                )
-
-                await insert_seen_url(url, source["id"], article_data["title"], "published")
-                recent_titles.append(article_data["title"])
-                published += 1
-                source_published += 1
-                _log_scraper(f"Published: '{article_data['title'][:60]}' by {author_name}")
-
-                # Rate limit: wait between articles to avoid Gemini API exhaustion
-                await asyncio.sleep(15)
-
         except Exception as e:
-            _log_scraper(f"Error processing source '{source['name']}': {e}", "error")
+            _log_scraper(f"Error fetching RSS for '{source['name']}': {e}", "error")
 
     _log_scraper(f"Cycle complete: {published} published, {skipped} skipped")
 
