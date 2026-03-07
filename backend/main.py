@@ -464,6 +464,44 @@ def get_youtube_transcript(video_id: str) -> Optional[str]:
         return None
 
 
+def get_transcript_via_gemini(url: str) -> Optional[str]:
+    """Extract transcript from YouTube video using Gemini's native video understanding.
+
+    Gemini can process YouTube URLs directly and transcribe the spoken content.
+    Uses gemini-2.0-flash for fast, cost-effective transcription.
+    """
+    try:
+        print(f"[transcript] Trying Gemini video transcription...")
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=[
+                types.Content(
+                    parts=[
+                        types.Part.from_uri(file_uri=url, mime_type="video/*"),
+                        types.Part.from_text(
+                            "Transcribe this entire video word-for-word. Output ONLY the "
+                            "spoken transcript text, nothing else. No timestamps, no speaker "
+                            "labels, no formatting — just the raw spoken words exactly as said."
+                        ),
+                    ]
+                )
+            ],
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                max_output_tokens=65536,
+            ),
+        )
+        text = response.text.strip() if response.text else ""
+        if len(text) < 100:
+            print(f"[transcript] Gemini transcript too short ({len(text)} chars)")
+            return None
+        print(f"[transcript] Gemini transcription OK: {len(text)} chars")
+        return text
+    except Exception as e:
+        print(f"[transcript] Gemini transcription failed: {e}")
+        return None
+
+
 def _download_via_cobalt(url: str, tmp_dir: str) -> str:
     """Download audio via self-hosted Cobalt v10 API. Returns filepath.
 
@@ -1393,13 +1431,16 @@ async def convert(req: ConvertRequest):
     if video_id:
         transcript = get_youtube_transcript(video_id)
 
-    # ── Step 2: Fall back to audio download + AssemblyAI transcription ──
+    # ── Step 2: Try Gemini video transcription (no download needed) ──
+    if not transcript:
+        transcript = get_transcript_via_gemini(url)
+
+    # ── Step 3: Fall back to audio download + AssemblyAI transcription ──
     if not transcript:
         if not ASSEMBLYAI_KEY:
             raise HTTPException(status_code=500, detail="ASSEMBLYAI_API_KEY not set")
         try:
             filepath, dl_metadata = download_audio(url)
-            # Fill in any missing metadata from download
             for k, v in dl_metadata.items():
                 if not metadata.get(k):
                     metadata[k] = v
