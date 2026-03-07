@@ -478,8 +478,8 @@ def get_transcript_via_gemini(url: str) -> Optional[str]:
                 types.Content(
                     parts=[
                         types.Part.from_uri(file_uri=url, mime_type="video/*"),
-                        types.Part.from_text(
-                            "Transcribe this entire video word-for-word. Output ONLY the "
+                        types.Part(
+                            text="Transcribe this entire video word-for-word. Output ONLY the "
                             "spoken transcript text, nothing else. No timestamps, no speaker "
                             "labels, no formatting — just the raw spoken words exactly as said."
                         ),
