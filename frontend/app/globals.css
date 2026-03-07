@@ -7,20 +7,20 @@
   /* ChainPulse design tokens */
   --cp-black: #0a0a0a;
   --cp-white: #ffffff;
-  --cp-off-white: #fafaf8;
-  --cp-gray-100: #f4f4f2;
-  --cp-gray-200: #e8e8e4;
-  --cp-gray-400: #a0a09a;
-  --cp-gray-600: #6b6b65;
-  --cp-gray-800: #2d2d28;
+  --cp-off-white: #f5f4f1;
+  --cp-gray-100: #edecea;
+  --cp-gray-200: #d4d4d0;
+  --cp-gray-400: #8a8a84;
+  --cp-gray-600: #52524d;
+  --cp-gray-800: #1e1e1a;
   --cp-accent: #f5a623;
   --cp-accent-2: #e8392e;
   --cp-accent-3: #1a6ef5;
   --cp-green: #0a8a55;
   --cp-red: #d92b2b;
-  --cp-serif: 'Playfair Display', Georgia, serif;
-  --cp-sans: 'DM Sans', sans-serif;
-  --cp-mono: 'DM Mono', monospace;
+  --cp-serif: 'Roboto', var(--font-geist-sans), sans-serif;
+  --cp-sans: 'Roboto', var(--font-geist-sans), sans-serif;
+  --cp-mono: 'Roboto Mono', var(--font-geist-mono), monospace;
 }
 
 @theme inline {
@@ -629,7 +629,7 @@ body {
   padding: 2px 6px;
   border-radius: 3px;
   white-space: nowrap;
-  margin-top: 4px;
+  margin-left: auto;
   flex-shrink: 0;
 }
 .sentiment-bullish {
@@ -935,6 +935,17 @@ body {
   word-break: break-word;
 }
 .cd-hero-card:hover .cd-hero-title { text-decoration: underline; text-underline-offset: 3px; }
+.cd-hero-desc {
+  font-family: var(--cp-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--cp-gray-600);
+  margin-bottom: 10px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .cd-hero-time {
   font-family: var(--cp-sans);
   font-size: 12px;

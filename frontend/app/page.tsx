@@ -48,6 +48,7 @@ interface Article {
   id: number;
   slug: string;
   title: string;
+  meta_description?: string;
   channel: string;
   channel_slug: string;
   thumbnail: string;
@@ -324,17 +325,19 @@ export default function HomePage() {
                 {formatTime(a.created_at)}
               </span>
               <h4 className="cd-latest-title">{a.title}</h4>
-              <p className="cd-latest-channel">
-                By{" "}
-                <Link
-                  href={`/@${a.channel_slug}`}
-                  className="cd-author-link"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {a.channel}
-                </Link>
-              </p>
-              <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
+              <div className="cd-card-meta">
+                <span className="cd-card-author">
+                  By{" "}
+                  <Link
+                    href={`/@${a.channel_slug}`}
+                    className="cd-author-link"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {a.channel}
+                  </Link>
+                </span>
+                <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
+              </div>
             </Link>
           ))}
         </aside>
@@ -391,6 +394,9 @@ export default function HomePage() {
                   <img src={featured.thumbnail} alt={featured.title} />
                 </div>
                 <h3 className="cd-hero-title">{featured.title}</h3>
+                {featured.meta_description && (
+                  <p className="cd-hero-desc">{featured.meta_description}</p>
+                )}
                 <div className="cd-card-meta">
                   <span className="cd-card-author">
                     By{" "}
@@ -399,8 +405,8 @@ export default function HomePage() {
                     </Link>
                   </span>
                   <span className="cd-card-date">{formatTime(featured.created_at)}</span>
+                  <SentimentGauge sentiment={featured.sentiment || "neutral"} score={featured.sentiment_score ?? 50} />
                 </div>
-                <SentimentGauge sentiment={featured.sentiment || "neutral"} score={featured.sentiment_score ?? 50} />
               </Link>
 
               {sideList.length > 0 && (
@@ -419,8 +425,8 @@ export default function HomePage() {
                         <div className="cd-card-meta">
                           <span className="cd-card-author">{a.channel}</span>
                           <span className="cd-card-date">{formatTime(a.created_at)}</span>
+                          <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                         </div>
-                        <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                       </div>
                     </Link>
                   ))}
@@ -453,8 +459,8 @@ export default function HomePage() {
                       </Link>
                     </span>
                     <span className="cd-card-date">{formatTime(a.created_at)}</span>
+                    <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                   </div>
-                  <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                 </Link>
               ))}
             </div>
@@ -495,8 +501,8 @@ export default function HomePage() {
                 <div className="cd-card-meta" style={{ marginTop: 8 }}>
                   <span className="cd-card-author">{editorsChoice.channel}</span>
                   <span className="cd-card-date">{formatTime(editorsChoice.created_at)}</span>
+                  <SentimentGauge sentiment={editorsChoice.sentiment || "neutral"} score={editorsChoice.sentiment_score ?? 50} />
                 </div>
-                <SentimentGauge sentiment={editorsChoice.sentiment || "neutral"} score={editorsChoice.sentiment_score ?? 50} />
               </Link>
             </div>
           )}
