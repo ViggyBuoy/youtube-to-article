@@ -429,19 +429,36 @@ def _fetch_metadata(url: str, video_id: str) -> dict:
     return metadata
 
 
-def get_youtube_transcript(video_id: str) -> str:
+def get_youtube_transcript(video_id: str) -> Optional[str]:
     """Get transcript from YouTube's built-in captions (auto-generated or manual).
 
     Works from cloud servers since it fetches captions, not video/audio streams.
+    Tries English first, then any available language.
     """
     try:
-        entries = YouTubeTranscriptApi.get_transcript(video_id)
-        text = " ".join(entry["text"] for entry in entries)
-        if len(text) < 100:
-            print(f"[transcript] YouTube captions too short ({len(text)} chars), skipping")
-            return None
-        print(f"[transcript] YouTube captions OK: {len(text)} chars")
-        return text
+        api = YouTubeTranscriptApi()
+        # Try English first, then Hindi, then any available language
+        for langs in [["en"], ["hi", "en"], None]:
+            try:
+                if langs:
+                    transcript = api.fetch(video_id, languages=langs)
+                else:
+                    # Try fetching whatever is available
+                    transcript_list = api.list(video_id)
+                    available = list(transcript_list)
+                    if not available:
+                        break
+                    transcript = api.fetch(video_id, languages=[available[0].language_code])
+                text = " ".join(snippet.text for snippet in transcript)
+                if len(text) < 100:
+                    print(f"[transcript] YouTube captions too short ({len(text)} chars), trying next")
+                    continue
+                print(f"[transcript] YouTube captions OK: {len(text)} chars (langs={langs})")
+                return text
+            except Exception:
+                continue
+        print(f"[transcript] No usable YouTube captions found")
+        return None
     except Exception as e:
         print(f"[transcript] YouTube captions unavailable: {e}")
         return None
