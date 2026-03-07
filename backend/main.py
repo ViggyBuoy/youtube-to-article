@@ -145,13 +145,18 @@ if _creds_json_raw and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
         print(f"[init] First 100 chars: {_clean[:100]}")
 
 if GCP_PROJECT:
-    # Vertex AI mode: uses $300 GCP credits & service account auth
-    gemini_client = genai.Client(
-        vertexai=True,
-        project=GCP_PROJECT,
-        location=GCP_LOCATION,
-    )
-    print(f"[init] Gemini: Vertex AI mode (project={GCP_PROJECT}, location={GCP_LOCATION})")
+    try:
+        # Vertex AI mode: uses GCP credits & service account auth
+        gemini_client = genai.Client(
+            vertexai=True,
+            project=GCP_PROJECT,
+            location=GCP_LOCATION,
+        )
+        print(f"[init] Gemini: Vertex AI mode (project={GCP_PROJECT}, location={GCP_LOCATION})")
+    except Exception as _vex:
+        print(f"[init] WARNING: Vertex AI init failed ({_vex}), falling back to API key")
+        gemini_client = genai.Client(api_key=GEMINI_KEY)
+        print(f"[init] Gemini: AI Studio mode (API key) [fallback]")
 else:
     # AI Studio mode: uses API key (free tier limits apply)
     gemini_client = genai.Client(api_key=GEMINI_KEY)
