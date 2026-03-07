@@ -227,8 +227,8 @@ export default function HomePage() {
   }
 
   const featured = filtered[0] || null;
-  const sideList = filtered.slice(1, 6);
-  const gridArticles = filtered.slice(6);
+  const sideList = isMobile ? [] : filtered.slice(1, 6);
+  const gridArticles = isMobile ? filtered.slice(1) : filtered.slice(6);
   const visibleGrid = gridArticles.slice(0, gridVisible);
   const hasMoreGrid = gridVisible < gridArticles.length;
 
@@ -463,7 +463,7 @@ export default function HomePage() {
                       className="cd-side-item cd-reveal"
                     >
                       <div className="cd-side-thumb">
-                        <img src={a.thumbnail} alt={a.title} />
+                        <img src={a.thumbnail} alt={a.title} loading="lazy" />
                       </div>
                       <div className="cd-side-body">
                         <h4 className="cd-side-title">{a.title}</h4>
@@ -490,7 +490,7 @@ export default function HomePage() {
                   style={{ animationDelay: `${i * 60}ms` }}
                 >
                   <div className="cd-grid-img">
-                    <img src={a.thumbnail} alt={a.title} />
+                    <img src={a.thumbnail} alt={a.title} loading="lazy" />
                   </div>
                   <div className="cd-grid-body">
                     <h4 className="cd-grid-title">{a.title}</h4>
@@ -541,7 +541,7 @@ export default function HomePage() {
                     className="cd-scroll-card"
                   >
                     <div className="cd-scroll-img">
-                      <img src={a.thumbnail} alt={a.title} />
+                      <img src={a.thumbnail} alt={a.title} loading="lazy" />
                     </div>
                     <div className="cd-scroll-body">
                       <h4 className="cd-scroll-title">{a.title}</h4>

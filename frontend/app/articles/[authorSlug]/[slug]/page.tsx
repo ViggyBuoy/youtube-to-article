@@ -6,12 +6,21 @@ import { LocalDate, SentimentGaugeClient, ViewTracker } from "./client-parts";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const REVALIDATE_SECONDS = 300; // 5 min cache
 
 function extractYouTubeId(url: string): string | null {
   const match = url.match(
     /(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/
   );
   return match ? match[1] : null;
+}
+
+async function fetchArticle(slug: string) {
+  const res = await fetch(`${API_BASE}/api/articles/${slug}`, {
+    next: { revalidate: REVALIDATE_SECONDS },
+  });
+  if (res.ok) return res.json();
+  return null;
 }
 
 const SENTIMENT_BADGE: Record<string, { cls: string; label: string }> = {
@@ -28,11 +37,8 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug, authorSlug } = await params;
   try {
-    const res = await fetch(`${API_BASE}/api/articles/${slug}`, {
-      next: { revalidate: 60 },
-    });
-    if (res.ok) {
-      const article = await res.json();
+    const article = await fetchArticle(slug);
+    if (article) {
       const articleUrl = `${SITE_URL}/articles/${authorSlug}/${slug}`;
       // Use /api/og-image endpoint for social previews (base64 data URLs don't work for OG)
       const ogImageUrl = article.thumbnail?.startsWith("data:")
@@ -82,12 +88,7 @@ export default async function ArticlePage({ params }: PageProps) {
 
   let article = null;
   try {
-    const res = await fetch(`${API_BASE}/api/articles/${slug}`, {
-      next: { revalidate: 60 },
-    });
-    if (res.ok) {
-      article = await res.json();
-    }
+    article = await fetchArticle(slug);
   } catch {
     // Backend might not be running
   }
@@ -151,7 +152,7 @@ export default async function ArticlePage({ params }: PageProps) {
           <hr className="ap-divider" />
 
           <div className="ap-featured-img">
-            <img src={article.thumbnail} alt={article.title} />
+            <img src={article.thumbnail} alt={article.title} fetchPriority="high" />
           </div>
 
           <div className="article-text">
@@ -184,6 +185,7 @@ export default async function ArticlePage({ params }: PageProps) {
                     title={article.title}
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
+                    loading="lazy"
                   />
                 </div>
               </div>

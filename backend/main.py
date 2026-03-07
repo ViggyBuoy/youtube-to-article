@@ -9,7 +9,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Literal, Optional
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -56,7 +56,7 @@ from database import (
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 
-_scraper_task: asyncio.Task | None = None
+_scraper_task: Optional[asyncio.Task] = None
 
 
 @asynccontextmanager
@@ -273,7 +273,7 @@ LANGUAGE_INSTRUCTIONS = {
 
 # ── Step 1: Download audio from YouTube ───────────────────────────────────────
 
-def _get_cookies_file(db_cookies: str | None = None):
+def _get_cookies_file(db_cookies: Optional[str] = None):
     """Write cookies to a temp file and return the path.
     Priority: db_cookies param > YOUTUBE_COOKIES env var.
     """
@@ -291,7 +291,7 @@ def _get_cookies_file(db_cookies: str | None = None):
 
 
 # Cached DB cookies (refreshed on save or every scrape cycle)
-_db_cookies_cache: str | None = None
+_db_cookies_cache: Optional[str] = None
 
 
 async def _load_db_cookies():

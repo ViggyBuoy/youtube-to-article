@@ -225,7 +225,7 @@ async def get_all_channels() -> list[dict]:
         return [_row_to_dict(row) for row in rows]
 
 
-async def get_articles_by_channel_slug(channel_slug: str) -> dict | None:
+async def get_articles_by_channel_slug(channel_slug: str) -> Optional[dict]:
     """Get channel info and all articles for a channel slug."""
     async with _pool.acquire() as conn:
         rows = await conn.fetch(
@@ -249,7 +249,7 @@ async def get_articles_by_channel_slug(channel_slug: str) -> dict | None:
 
 # ── Admin CRUD ────────────────────────────────────────────────────────────────
 
-async def update_article(slug: str, title: str, meta_description: str, article: str) -> dict | None:
+async def update_article(slug: str, title: str, meta_description: str, article: str) -> Optional[dict]:
     """Update an article's editable fields."""
     async with _pool.acquire() as conn:
         result = await conn.execute(
@@ -332,7 +332,7 @@ async def get_all_sources() -> list[dict]:
         return [_row_to_dict(row) for row in rows]
 
 
-async def toggle_source(source_id: int, enabled: bool) -> dict | None:
+async def toggle_source(source_id: int, enabled: bool) -> Optional[dict]:
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
             "UPDATE sources SET enabled = $1 WHERE id = $2 RETURNING *",
@@ -394,7 +394,7 @@ async def increment_view_count(slug: str) -> int:
         return row["view_count"] if row else 0
 
 
-async def get_editors_choice(hours: int = 48) -> dict | None:
+async def get_editors_choice(hours: int = 48) -> Optional[dict]:
     """Get the article with the highest views in the last N hours."""
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     async with _pool.acquire() as conn:
@@ -512,7 +512,7 @@ async def unset_featured_article(slug: str) -> bool:
         return result != "UPDATE 0"
 
 
-async def get_featured_article() -> dict | None:
+async def get_featured_article() -> Optional[dict]:
     """Get the currently featured article, if any."""
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
