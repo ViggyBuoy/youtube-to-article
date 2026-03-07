@@ -6,6 +6,7 @@ import UrlForm from "../../components/UrlForm";
 import ArticleView from "../../components/ArticleView";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const APP_PASSWORD = "Devashishone23@";
 
 interface Metadata {
   title: string;
@@ -40,6 +41,13 @@ export default function ConverterPage() {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [currentUrl, setCurrentUrl] = useState("");
+  const [authed, setAuthed] = useState(false);
+  const [pwInput, setPwInput] = useState("");
+  const [pwError, setPwError] = useState(false);
+
+  useEffect(() => {
+    if (sessionStorage.getItem("app_authed") === "1") setAuthed(true);
+  }, []);
 
   // Silent 6-hour cookie health check
   useEffect(() => {
@@ -122,6 +130,67 @@ export default function ConverterPage() {
     } finally {
       setPublishing(false);
     }
+  }
+
+  if (!authed) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-6">
+        <div className="text-center">
+          <h1 style={{ fontFamily: "var(--cp-serif)", fontSize: 28, fontWeight: 900, color: "#111" }}>
+            Access Required
+          </h1>
+          <p style={{ color: "#6b7280", marginTop: 8, fontSize: 14 }}>
+            Enter the password to continue
+          </p>
+        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (pwInput === APP_PASSWORD) {
+              sessionStorage.setItem("app_authed", "1");
+              setAuthed(true);
+              setPwError(false);
+            } else {
+              setPwError(true);
+            }
+          }}
+          style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%", maxWidth: 340 }}
+        >
+          <input
+            type="password"
+            placeholder="Password"
+            value={pwInput}
+            onChange={(e) => { setPwInput(e.target.value); setPwError(false); }}
+            style={{
+              padding: "10px 14px",
+              border: `1px solid ${pwError ? "#ef4444" : "#d1d5db"}`,
+              borderRadius: 6,
+              fontSize: 14,
+              outline: "none",
+            }}
+            autoFocus
+          />
+          {pwError && (
+            <p style={{ color: "#ef4444", fontSize: 12, margin: 0 }}>Incorrect password</p>
+          )}
+          <button
+            type="submit"
+            style={{
+              padding: "10px 0",
+              background: "#111",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Unlock
+          </button>
+        </form>
+      </main>
+    );
   }
 
   return (

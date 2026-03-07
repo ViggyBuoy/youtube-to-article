@@ -2,6 +2,7 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Metadata } from "next";
+import { LocalDate, SentimentGaugeClient } from "./client-parts";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
@@ -109,17 +110,6 @@ export default async function ArticlePage({ params }: PageProps) {
   const sentiment = article.sentiment || "neutral";
   const sentimentScore = article.sentiment_score ?? 50;
   const sentimentInfo = SENTIMENT_BADGE[sentiment] || SENTIMENT_BADGE.neutral;
-  const publishedDate = new Date(article.created_at + "Z");
-  const formattedDate = publishedDate.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-  const formattedTime = publishedDate.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
   const readingTime = Math.max(1, Math.round(article.article.split(/\s+/).length / 200));
   const articlePath = `/articles/${authorSlug}/${article.slug}`;
 
@@ -132,16 +122,7 @@ export default async function ArticlePage({ params }: PageProps) {
       <div className="ap-layout">
         <article className="ap-article">
           <div className="ap-topbar">
-            <span className={`cd-sentiment-badge ${sentimentInfo.cls}`}>
-              {sentimentInfo.label}
-              <span className="cd-sentiment-meter">
-                <span
-                  className={`cd-sentiment-fill cd-sentiment-fill-${sentiment}`}
-                  style={{ width: `${sentimentScore}%` }}
-                />
-              </span>
-              <span className="cd-sentiment-score">{sentimentScore}</span>
-            </span>
+            <SentimentGaugeClient sentiment={sentiment} score={sentimentScore} />
             <a
               className="ap-share-link"
               href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(article.title)}&url=${encodeURIComponent(`${SITE_URL}${articlePath}`)}`}
@@ -163,7 +144,7 @@ export default async function ArticlePage({ params }: PageProps) {
           </div>
 
           <div className="ap-date">
-            {formattedDate}, {formattedTime} &middot; {readingTime} min read
+            <LocalDate dateStr={article.created_at} /> &middot; {readingTime} min read
           </div>
 
           <hr className="ap-divider" />
@@ -248,7 +229,7 @@ export default async function ArticlePage({ params }: PageProps) {
             </div>
             <div className="ap-detail-row">
               <span className="ap-detail-label">Published</span>
-              <span className="ap-detail-value">{formattedDate}</span>
+              <span className="ap-detail-value"><LocalDate dateStr={article.created_at} /></span>
             </div>
             <div className="ap-detail-row">
               <span className="ap-detail-label">Reading Time</span>
@@ -291,7 +272,6 @@ export default async function ArticlePage({ params }: PageProps) {
         <div className="cd-footer-brand">
           CryptoDaily<span style={{ color: "var(--cp-accent)" }}>Ink</span>
         </div>
-        <p className="cd-footer-sub">Powered by YouTube to Article</p>
       </footer>
     </div>
   );

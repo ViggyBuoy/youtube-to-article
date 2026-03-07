@@ -642,27 +642,30 @@ body {
   background: #fee2e2;
   color: #dc2626;
 }
-.cd-sentiment-meter {
-  display: inline-block;
-  width: 32px;
-  height: 5px;
-  background: rgba(0,0,0,0.1);
-  border-radius: 3px;
-  overflow: hidden;
+.cd-gauge-svg {
   vertical-align: middle;
+  flex-shrink: 0;
 }
-.cd-sentiment-fill {
-  display: block;
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.3s ease;
+
+/* ── Article card meta (author + date) ── */
+.cd-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--cp-sans);
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 4px;
 }
-.cd-sentiment-fill-bullish { background: #22c55e; }
-.cd-sentiment-fill-neutral { background: #9ca3af; }
-.cd-sentiment-fill-bearish { background: #ef4444; }
-.cd-sentiment-score {
-  font-size: 9px;
-  opacity: 0.8;
+.cd-card-author {
+  font-weight: 500;
+}
+.cd-card-date {
+  opacity: 0.7;
+}
+.cd-card-date::before {
+  content: "\00b7";
+  margin-right: 8px;
 }
 .cd-sentiment-pill {
   font-family: var(--cp-mono);

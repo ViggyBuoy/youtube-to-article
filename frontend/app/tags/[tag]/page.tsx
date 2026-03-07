@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SentimentGauge, LocalDate } from "../../../components/SentimentGauge";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -64,18 +65,19 @@ export default async function TagPage({ params }: PageProps) {
                     </div>
                   )}
                   <div className="cd-grid-body">
-                    <span className={`cd-lang-pill ${langInfo.class}`}>
-                      {langInfo.label}
-                    </span>
+                    <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                     <h3 className="cd-grid-title">{a.title}</h3>
-                    <div className="cd-grid-meta">
-                      <Link
-                        href={`/@${a.channel_slug || ""}`}
-                        className="cd-author-link"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {a.channel}
-                      </Link>
+                    <div className="cd-card-meta">
+                      <span className="cd-card-author">
+                        <Link
+                          href={`/@${a.channel_slug || ""}`}
+                          className="cd-author-link"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {a.channel}
+                        </Link>
+                      </span>
+                      {a.created_at && <LocalDate dateStr={a.created_at} />}
                     </div>
                   </div>
                 </Link>
@@ -89,7 +91,6 @@ export default async function TagPage({ params }: PageProps) {
         <div className="cd-footer-brand">
           CryptoDaily<span style={{ color: "var(--cp-accent)" }}>Ink</span>
         </div>
-        <p className="cd-footer-sub">Powered by YouTube to Article</p>
       </footer>
     </div>
   );

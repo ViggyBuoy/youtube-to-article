@@ -177,7 +177,6 @@ export default async function ChannelProfilePage({ params }: PageProps) {
         <div className="cd-footer-brand">
           CryptoDaily<span style={{ color: "var(--cp-accent)" }}>Ink</span>
         </div>
-        <p className="cd-footer-sub">Powered by YouTube to Article</p>
       </footer>
     </div>
   );

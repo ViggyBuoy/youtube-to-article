@@ -97,19 +97,32 @@ function sentimentOf(a: Article) {
   return SENTIMENT_BADGE[s] || SENTIMENT_BADGE.neutral;
 }
 
-function SentimentMeter({ sentiment, score }: { sentiment: string; score: number }) {
+function SentimentGauge({ sentiment, score }: { sentiment: string; score: number }) {
   const s = sentiment || "neutral";
   const info = SENTIMENT_BADGE[s] || SENTIMENT_BADGE.neutral;
+
+  // Map to 0-100 gauge value: 0 = full bearish (left), 50 = neutral (center), 100 = full bullish (right)
+  let gv = 50;
+  if (s === "bearish") gv = (100 - score) / 2;
+  else if (s === "bullish") gv = 50 + score / 2;
+
+  // Needle angle: -90° (left) to +90° (right)
+  const angle = (gv / 100) * 180 - 90;
+
   return (
     <span className={`cd-sentiment-badge ${info.cls}`}>
       {info.label}
-      <span className="cd-sentiment-meter">
-        <span
-          className={`cd-sentiment-fill cd-sentiment-fill-${s}`}
-          style={{ width: `${score}%` }}
+      <svg width="28" height="16" viewBox="0 0 36 22" className="cd-gauge-svg">
+        <path d="M 4 20 A 14 14 0 0 1 11 7.88" fill="none" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" />
+        <path d="M 11 7.88 A 14 14 0 0 1 25 7.88" fill="none" stroke="#d1d5db" strokeWidth="3" />
+        <path d="M 25 7.88 A 14 14 0 0 1 32 20" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" />
+        <line
+          x1="18" y1="20" x2="18" y2="7"
+          stroke="#1f2937" strokeWidth="1.5" strokeLinecap="round"
+          style={{ transform: `rotate(${angle}deg)`, transformOrigin: "18px 20px", transition: "transform 0.6s ease" }}
         />
-      </span>
-      <span className="cd-sentiment-score">{score}</span>
+        <circle cx="18" cy="20" r="2" fill="#374151" />
+      </svg>
     </span>
   );
 }
@@ -283,7 +296,7 @@ export default function HomePage() {
                 {formatTime(a.created_at)}
               </span>
               <div className="cd-latest-badges">
-                <SentimentMeter sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
+                <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
               </div>
               <h4 className="cd-latest-title">{a.title}</h4>
               <p className="cd-latest-channel">
@@ -351,11 +364,17 @@ export default function HomePage() {
                 <div className="cd-hero-img">
                   <img src={featured.thumbnail} alt={featured.title} />
                 </div>
-                <SentimentMeter sentiment={featured.sentiment || "neutral"} score={featured.sentiment_score ?? 50} />
+                <SentimentGauge sentiment={featured.sentiment || "neutral"} score={featured.sentiment_score ?? 50} />
                 <h3 className="cd-hero-title">{featured.title}</h3>
-                <span className="cd-hero-time">
-                  {timeAgo(featured.created_at)}
-                </span>
+                <div className="cd-card-meta">
+                  <span className="cd-card-author">
+                    By{" "}
+                    <Link href={`/@${featured.channel_slug}`} className="cd-author-link" onClick={(e) => e.stopPropagation()}>
+                      {featured.channel}
+                    </Link>
+                  </span>
+                  <span className="cd-card-date">{formatTime(featured.created_at)}</span>
+                </div>
               </Link>
 
               {sideList.length > 0 && (
@@ -370,8 +389,12 @@ export default function HomePage() {
                         <img src={a.thumbnail} alt={a.title} />
                       </div>
                       <div className="cd-side-body">
-                        <SentimentMeter sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
+                        <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                         <h4 className="cd-side-title">{a.title}</h4>
+                        <div className="cd-card-meta">
+                          <span className="cd-card-author">{a.channel}</span>
+                          <span className="cd-card-date">{formatTime(a.created_at)}</span>
+                        </div>
                       </div>
                     </Link>
                   ))}
@@ -391,17 +414,20 @@ export default function HomePage() {
                   <div className="cd-grid-img">
                     <img src={a.thumbnail} alt={a.title} />
                   </div>
-                  <SentimentMeter sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
+                  <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                   <h4 className="cd-grid-title">{a.title}</h4>
-                  <p className="cd-grid-meta">
-                    <Link
-                      href={`/@${a.channel_slug}`}
-                      className="cd-author-link"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {a.channel}
-                    </Link>
-                  </p>
+                  <div className="cd-card-meta">
+                    <span className="cd-card-author">
+                      <Link
+                        href={`/@${a.channel_slug}`}
+                        className="cd-author-link"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {a.channel}
+                      </Link>
+                    </span>
+                    <span className="cd-card-date">{formatTime(a.created_at)}</span>
+                  </div>
                 </Link>
               ))}
             </div>
@@ -462,7 +488,6 @@ export default function HomePage() {
         <div className="cd-footer-brand">
           CryptoDaily<span style={{ color: "var(--cp-accent)" }}>Ink</span>
         </div>
-        <p className="cd-footer-sub">Powered by YouTube to Article</p>
       </footer>
     </div>
   );
