@@ -542,7 +542,7 @@ def download_audio(url: str) -> tuple[str, dict]:
         try:
             print(f"[download] yt-dlp client={client_name}")
             opts = {
-                "format": "ba/bestaudio/best",
+                "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/ba/best",
                 "extract_audio": True,
                 "outtmpl": output_path,
                 "noplaylist": True,
@@ -1358,39 +1358,57 @@ async def convert(req: ConvertRequest):
     url = req.url.strip()
     if not YOUTUBE_URL_PATTERN.match(url):
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
-    if not ASSEMBLYAI_KEY:
-        raise HTTPException(status_code=500, detail="ASSEMBLYAI_API_KEY not set")
     if not GEMINI_KEY:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY not set")
 
-    # Download audio
-    try:
-        filepath, metadata = download_audio(url)
-    except Exception as e:
-        print(f"[convert] Audio download failed: {e}")
-        raise HTTPException(status_code=502, detail=f"Audio download failed: {e}")
+    video_id = _get_video_id(url)
+    metadata = _fetch_metadata(url, video_id)
 
-    # Start thumbnail generation in parallel (with article title for context)
+    # Start thumbnail generation in parallel
     executor = ThreadPoolExecutor(max_workers=1)
     thumbnail_future = executor.submit(
         generate_thumbnail, metadata["thumbnail"], metadata["title"]
     )
 
+    # ── Step 1: Try free YouTube captions first (fast, no download needed) ──
+    transcript = None
+    filepath = None
+    if video_id:
+        transcript = get_youtube_transcript(video_id)
+
+    # ── Step 2: Fall back to audio download + AssemblyAI transcription ──
+    if not transcript:
+        if not ASSEMBLYAI_KEY:
+            raise HTTPException(status_code=500, detail="ASSEMBLYAI_API_KEY not set")
+        try:
+            filepath, dl_metadata = download_audio(url)
+            # Fill in any missing metadata from download
+            for k, v in dl_metadata.items():
+                if not metadata.get(k):
+                    metadata[k] = v
+        except Exception as e:
+            print(f"[convert] Audio download failed: {e}")
+            raise HTTPException(status_code=502, detail=f"Audio download failed: {e}")
+        try:
+            transcript = await transcribe_audio(filepath)
+        except Exception as e:
+            print(f"[convert] Transcription failed: {e}")
+            raise HTTPException(status_code=502, detail=f"Transcription failed: {e}")
+        finally:
+            if filepath and os.path.exists(filepath):
+                os.remove(filepath)
+
     try:
-        transcript = await transcribe_audio(filepath)
         article_data = generate_article(transcript, metadata["title"], metadata["channel"], req.language)
     except Exception as e:
-        print(f"[convert] Processing failed: {e}")
+        print(f"[convert] Article generation failed: {e}")
         raise HTTPException(status_code=502, detail=f"Article generation failed: {e}")
-    finally:
-        if os.path.exists(filepath):
-            os.remove(filepath)
 
     try:
         ai_thumbnail = thumbnail_future.result(timeout=60)
     except Exception as e:
         print(f"[convert] Thumbnail generation failed: {e}")
-        ai_thumbnail = metadata["thumbnail"]  # Fallback to original thumbnail
+        ai_thumbnail = metadata["thumbnail"]
     executor.shutdown(wait=False)
     metadata["thumbnail"] = ai_thumbnail
     print(f"[convert] Thumbnail ready: {ai_thumbnail[:80]}...")
