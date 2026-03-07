@@ -65,7 +65,6 @@ export default async function TagPage({ params }: PageProps) {
                     </div>
                   )}
                   <div className="cd-grid-body">
-                    <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                     <h3 className="cd-grid-title">{a.title}</h3>
                     <div className="cd-card-meta">
                       <span className="cd-card-author">
@@ -79,6 +78,7 @@ export default async function TagPage({ params }: PageProps) {
                       </span>
                       {a.created_at && <LocalDate dateStr={a.created_at} />}
                     </div>
+                    <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                   </div>
                 </Link>
               );

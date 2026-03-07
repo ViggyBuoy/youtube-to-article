@@ -319,12 +319,9 @@ export default function HomePage() {
               href={articleUrl(a)}
               className="cd-latest-item"
             >
-              <div className="cd-latest-top-row">
-                <span className="cd-latest-time">
-                  {formatTime(a.created_at)}
-                </span>
-                <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
-              </div>
+              <span className="cd-latest-time">
+                {formatTime(a.created_at)}
+              </span>
               <h4 className="cd-latest-title">{a.title}</h4>
               <p className="cd-latest-channel">
                 By{" "}
@@ -336,6 +333,7 @@ export default function HomePage() {
                   {a.channel}
                 </Link>
               </p>
+              <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
             </Link>
           ))}
         </aside>
@@ -400,8 +398,8 @@ export default function HomePage() {
                     </Link>
                   </span>
                   <span className="cd-card-date">{formatTime(featured.created_at)}</span>
-                  <SentimentGauge sentiment={featured.sentiment || "neutral"} score={featured.sentiment_score ?? 50} />
                 </div>
+                <SentimentGauge sentiment={featured.sentiment || "neutral"} score={featured.sentiment_score ?? 50} />
               </Link>
 
               {sideList.length > 0 && (
@@ -420,8 +418,8 @@ export default function HomePage() {
                         <div className="cd-card-meta">
                           <span className="cd-card-author">{a.channel}</span>
                           <span className="cd-card-date">{formatTime(a.created_at)}</span>
-                          <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                         </div>
+                        <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                       </div>
                     </Link>
                   ))}
@@ -454,8 +452,8 @@ export default function HomePage() {
                       </Link>
                     </span>
                     <span className="cd-card-date">{formatTime(a.created_at)}</span>
-                    <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                   </div>
+                  <SentimentGauge sentiment={a.sentiment || "neutral"} score={a.sentiment_score ?? 50} />
                 </Link>
               ))}
             </div>
