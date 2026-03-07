@@ -1413,8 +1413,8 @@ async def convert(req: ConvertRequest):
     url = req.url.strip()
     if not YOUTUBE_URL_PATTERN.match(url):
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
-    if not GEMINI_KEY and not GCP_PROJECT:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY or GOOGLE_CLOUD_PROJECT must be set")
+    if not GCP_PROJECT and not GEMINI_KEY:
+        raise HTTPException(status_code=500, detail="GOOGLE_CLOUD_PROJECT or GEMINI_API_KEY must be set")
 
     video_id = _get_video_id(url)
     metadata = _fetch_metadata(url, video_id)
@@ -1425,36 +1425,10 @@ async def convert(req: ConvertRequest):
         generate_thumbnail, metadata["thumbnail"], metadata["title"]
     )
 
-    # ── Step 1: Try free YouTube captions first (fast, no download needed) ──
-    transcript = None
-    filepath = None
-    if video_id:
-        transcript = get_youtube_transcript(video_id)
-
-    # ── Step 2: Try Gemini video transcription (no download needed) ──
+    # ── Transcribe via Gemini 2.0 Flash (Vertex AI) ──
+    transcript = get_transcript_via_gemini(url)
     if not transcript:
-        transcript = get_transcript_via_gemini(url)
-
-    # ── Step 3: Fall back to audio download + AssemblyAI transcription ──
-    if not transcript:
-        if not ASSEMBLYAI_KEY:
-            raise HTTPException(status_code=500, detail="ASSEMBLYAI_API_KEY not set")
-        try:
-            filepath, dl_metadata = download_audio(url)
-            for k, v in dl_metadata.items():
-                if not metadata.get(k):
-                    metadata[k] = v
-        except Exception as e:
-            print(f"[convert] Audio download failed: {e}")
-            raise HTTPException(status_code=502, detail=f"Audio download failed: {e}")
-        try:
-            transcript = await transcribe_audio(filepath)
-        except Exception as e:
-            print(f"[convert] Transcription failed: {e}")
-            raise HTTPException(status_code=502, detail=f"Transcription failed: {e}")
-        finally:
-            if filepath and os.path.exists(filepath):
-                os.remove(filepath)
+        raise HTTPException(status_code=502, detail="Gemini video transcription failed. Please try again.")
 
     try:
         article_data = generate_article(transcript, metadata["title"], metadata["channel"], req.language)
