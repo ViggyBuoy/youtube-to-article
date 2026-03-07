@@ -4,17 +4,44 @@ export default function ArticleLoading() {
       <div className="back-btn">&larr; All Articles</div>
       <div className="ap-layout">
         <article className="ap-article">
-          <div style={{ height: 16, width: 80, background: "#e5e5e5", borderRadius: 3, marginBottom: 20 }} />
-          <div style={{ height: 40, width: "80%", background: "#e5e5e5", borderRadius: 4, marginBottom: 12 }} />
-          <div style={{ height: 40, width: "60%", background: "#e5e5e5", borderRadius: 4, marginBottom: 20 }} />
-          <div style={{ height: 14, width: 200, background: "#f0f0f0", borderRadius: 3, marginBottom: 8 }} />
-          <div style={{ height: 12, width: 250, background: "#f0f0f0", borderRadius: 3, marginBottom: 20 }} />
+          {/* Sentiment badge */}
+          <div className="cd-skeleton-bar" style={{ height: 20, width: 90, borderRadius: 12, marginBottom: 20 }} />
+          {/* Title lines */}
+          <div className="cd-skeleton-bar" style={{ height: 36, width: "85%", borderRadius: 4, marginBottom: 10 }} />
+          <div className="cd-skeleton-bar" style={{ height: 36, width: "55%", borderRadius: 4, marginBottom: 20 }} />
+          {/* Byline */}
+          <div className="cd-skeleton-bar" style={{ height: 14, width: 180, borderRadius: 3, marginBottom: 6 }} />
+          {/* Date */}
+          <div className="cd-skeleton-bar" style={{ height: 12, width: 240, borderRadius: 3, marginBottom: 20 }} />
           <hr className="ap-divider" />
-          <div style={{ aspectRatio: "16/9", width: "100%", background: "#f0f0f0", borderRadius: 4, marginBottom: 32 }} />
-          {[1,2,3,4,5].map(i => (
-            <div key={i} style={{ height: 14, width: `${90 - i * 5}%`, background: "#f5f5f5", borderRadius: 3, marginBottom: 12 }} />
+          {/* Featured image */}
+          <div className="cd-skeleton-bar" style={{ aspectRatio: "16/9", width: "100%", borderRadius: 6, marginBottom: 32 }} />
+          {/* Body text lines */}
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+            <div
+              key={i}
+              className="cd-skeleton-bar"
+              style={{
+                height: 14,
+                width: `${95 - ((i * 7) % 30)}%`,
+                borderRadius: 3,
+                marginBottom: i === 4 ? 24 : 10,
+              }}
+            />
           ))}
         </article>
+
+        <aside className="ap-sidebar">
+          <div className="ap-details-card">
+            <div className="cd-skeleton-bar" style={{ height: 18, width: "60%", borderRadius: 3, marginBottom: 16 }} />
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+                <div className="cd-skeleton-bar" style={{ height: 13, width: 70, borderRadius: 3 }} />
+                <div className="cd-skeleton-bar" style={{ height: 13, width: 90, borderRadius: 3 }} />
+              </div>
+            ))}
+          </div>
+        </aside>
       </div>
     </div>
   );

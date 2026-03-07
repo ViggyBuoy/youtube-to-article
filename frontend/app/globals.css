@@ -364,6 +364,57 @@ body {
   text-underline-offset: 2px;
 }
 
+/* ── Markdown Tables ── */
+.article-text table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 24px 0;
+  font-size: 14px;
+  line-height: 1.6;
+  border: 1px solid var(--cp-gray-200);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.article-text thead {
+  background: var(--cp-gray-100);
+}
+.article-text th {
+  font-family: var(--cp-sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--cp-gray-600);
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--cp-gray-200);
+}
+.article-text td {
+  font-family: var(--cp-sans);
+  font-size: 14px;
+  color: var(--cp-gray-800);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--cp-gray-200);
+}
+.article-text tbody tr:last-child td {
+  border-bottom: none;
+}
+.article-text tbody tr:hover {
+  background: var(--cp-gray-100);
+}
+.article-text td strong {
+  color: var(--cp-black);
+}
+/* Table responsive wrapper on mobile */
+@media (max-width: 768px) {
+  .article-text table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+}
+
 /* Tags */
 .article-tags {
   display: flex;

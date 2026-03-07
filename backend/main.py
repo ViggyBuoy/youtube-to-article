@@ -688,7 +688,11 @@ def generate_thumbnail(image_url: str, article_title: str = "") -> str:
             "novels with bold, dark ink outlines and clean cel-shading. "
             "The elements in the image should be heavily inspired by the title of the "
             "article and image I have shared. "
-            "Make sure you remove any logo if you find in the image."
+            "Make sure you remove any logo if you find in the image. "
+            "IMPORTANT: The output image MUST be exactly 1200 pixels wide and 630 pixels tall "
+            "(1200x630, landscape orientation, 1.91:1 aspect ratio). This is the standard "
+            "Open Graph social media preview size. Ensure ALL visual elements fit within "
+            "the frame with no cropping — leave adequate padding around edges."
             f"{title_line}"
         )
         print(f"[thumbnail] Model: gemini-3.1-flash-image-preview")
